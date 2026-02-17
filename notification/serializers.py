@@ -1,5 +1,10 @@
 from rest_framework import serializers
-from .models import *
+from .models import (
+    Profile, Device, Notification, NotificationDeliveryLog,
+    Topic, UserTopic, FirebaseProject,
+    NotificationTemplate, NotificationAnalytics, WebhookEndpoint,
+    ScheduledNotification,
+)
 
 
 class ProfileSerializer(serializers.ModelSerializer):
@@ -106,6 +111,42 @@ class NotificationAnalyticsSerializer(serializers.ModelSerializer):
     class Meta:
         model = NotificationAnalytics
         fields = '__all__'
+
+
+class ScheduledNotificationSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ScheduledNotification
+        fields = '__all__'
+        read_only_fields = ['created_by', 'created_at', 'next_run_at', 'last_sent_at', 'occurrence_count']
+
+    def create(self, validated_data):
+        validated_data['created_by'] = self.context['request'].user
+        # Set next_run_at to scheduled_at initially
+        if 'next_run_at' not in validated_data or validated_data.get('next_run_at') is None:
+            validated_data['next_run_at'] = validated_data.get('scheduled_at')
+        return super().create(validated_data)
+
+
+class TemplateSendSerializer(serializers.Serializer):
+    """Send a notification using a pre-defined template with variable substitution."""
+    template_name = serializers.CharField(max_length=100, help_text="Name of the NotificationTemplate to use")
+    variables = serializers.JSONField(required=False, default=dict, help_text="Variables to substitute into the template: {\"name\": \"John\"}")
+    phone_number = serializers.CharField(help_text="Target phone number")
+    data = serializers.JSONField(required=False, default=dict)
+    priority = serializers.ChoiceField(choices=['high', 'normal'], default='high')
+    is_silent = serializers.BooleanField(default=False)
+    click_action = serializers.URLField(required=False, allow_blank=True, default='')
+    firebase_project_id = serializers.IntegerField(required=False)
+
+
+class TemplateBulkSendSerializer(serializers.Serializer):
+    """Bulk send using a template."""
+    template_name = serializers.CharField(max_length=100)
+    variables = serializers.JSONField(required=False, default=dict)
+    phone_numbers = serializers.ListField(child=serializers.CharField(), min_length=1, max_length=500)
+    data = serializers.JSONField(required=False, default=dict)
+    priority = serializers.ChoiceField(choices=['high', 'normal'], default='high')
+    firebase_project_id = serializers.IntegerField(required=False)
 
 
 class WebhookEndpointSerializer(serializers.ModelSerializer):

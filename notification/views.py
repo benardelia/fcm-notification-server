@@ -15,19 +15,20 @@ from .serializers import (
     SendNotificationSerializer, BulkSendNotificationSerializer,
     TopicNotificationSerializer, FirebaseProjectSerializer,
     NotificationTemplateSerializer, NotificationAnalyticsSerializer,
-    WebhookEndpointSerializer,
+    WebhookEndpointSerializer, ScheduledNotificationSerializer,
+    TemplateSendSerializer, TemplateBulkSendSerializer,
 )
 from .models import (
     Profile, Device, Notification, NotificationDeliveryLog,
     Topic, UserTopic, FirebaseProject, NotificationTemplate,
-    NotificationAnalytics, WebhookEndpoint,
+    NotificationAnalytics, WebhookEndpoint, ScheduledNotification,
 )
 from .filters import (
     ProfileFilter, DeviceFilter, NotificationFilter,
     DeliveryLogFilter, TopicFilter, NotificationTemplateFilter,
-    AnalyticsFilter,
+    AnalyticsFilter, ScheduledNotificationFilter,
 )
-from .services import FCMService, dispatch_webhook
+from .services import FCMService, dispatch_webhook, render_notification_template
 
 logger = logging.getLogger(__name__)
 
@@ -296,6 +297,152 @@ class TopicNotificationView(APIView):
                 {"success": False, "error": {"code": "send_failed", "message": str(e)}},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
+
+
+@extend_schema(tags=['Notifications'])
+class TemplateSendView(APIView):
+    """
+    Send a notification using a pre-defined template with variable substitution.
+
+    Resolves the template by name, renders title/body with provided variables,
+    and sends to all active devices for the given phone number.
+    """
+
+    @extend_schema(
+        request=TemplateSendSerializer,
+        responses={200: dict},
+        summary="Send notification using a template",
+    )
+    def post(self, request):
+        serializer = TemplateSendSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        template_name = serializer.validated_data['template_name']
+        variables = serializer.validated_data.get('variables', {})
+        phone_number = serializer.validated_data['phone_number']
+        extra_data = serializer.validated_data.get('data', {})
+        priority = serializer.validated_data.get('priority', 'high')
+        is_silent = serializer.validated_data.get('is_silent', False)
+        click_action = serializer.validated_data.get('click_action', '')
+        firebase_project_id = serializer.validated_data.get('firebase_project_id')
+
+        template = get_object_or_404(NotificationTemplate, name=template_name, is_active=True)
+        rendered = render_notification_template(template, variables)
+
+        profile = get_object_or_404(Profile, phone_number=phone_number)
+        devices = profile.devices.filter(is_active=True)
+        if not devices.exists():
+            return Response(
+                {"success": False, "error": {"code": "not_found", "message": "No active device found for this profile."}},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        # Merge rendered data with extra data
+        merged_data = {**rendered.get('data', {}), **extra_data}
+
+        firebase_project = None
+        if firebase_project_id:
+            firebase_project = get_object_or_404(FirebaseProject, pk=firebase_project_id, is_active=True)
+
+        try:
+            fcm = FCMService(firebase_project=firebase_project)
+            tokens = [d.push_token for d in devices]
+
+            notification = Notification.objects.create(
+                title=rendered['title'],
+                body=rendered['body'],
+                data_payload=merged_data,
+                image_url=template.platform_overrides.get('image_url', ''),
+                priority=priority,
+                is_silent=is_silent,
+                click_action=click_action,
+                template=template,
+                template_variables=variables,
+                status="sent",
+                sent_at=timezone.now(),
+            )
+
+            if len(tokens) == 1:
+                fcm.send_to_device(
+                    token=tokens[0], title=rendered['title'], body=rendered['body'],
+                    data=merged_data, priority=priority, is_silent=is_silent,
+                    click_action=click_action,
+                )
+                NotificationDeliveryLog.objects.create(
+                    notification=notification, device=devices[0],
+                    delivered_at=timezone.now(), status="sent",
+                )
+            else:
+                response = fcm.send_multicast(
+                    tokens=tokens, title=rendered['title'], body=rendered['body'],
+                    data=merged_data, priority=priority, is_silent=is_silent,
+                    click_action=click_action,
+                )
+                for i, device in enumerate(devices):
+                    ind_status = "sent"
+                    error_msg = None
+                    if hasattr(response, 'responses') and i < len(response.responses):
+                        if not response.responses[i].success:
+                            ind_status = "failed"
+                            error_msg = str(response.responses[i].exception)
+                    NotificationDeliveryLog.objects.create(
+                        notification=notification, device=device,
+                        delivered_at=timezone.now() if ind_status == "sent" else None,
+                        status=ind_status, error_message=error_msg,
+                    )
+
+            return Response({
+                "success": True,
+                "message": f"Template '{template_name}' sent to {len(tokens)} device(s)",
+                "notification_id": notification.pk,
+                "rendered_title": rendered['title'],
+                "rendered_body": rendered['body'],
+            }, status=status.HTTP_200_OK)
+
+        except Exception as e:
+            logger.error(f"Error sending template notification: {e}")
+            return Response(
+                {"success": False, "error": {"code": "send_failed", "message": str(e)}},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+
+
+# ============================================================
+# Scheduled Notification Views
+# ============================================================
+
+@extend_schema_view(
+    list=extend_schema(summary="List scheduled notifications", tags=['Scheduled Notifications']),
+    create=extend_schema(summary="Create a scheduled notification", tags=['Scheduled Notifications']),
+)
+class ScheduledNotificationListCreateView(generics.ListCreateAPIView):
+    serializer_class = ScheduledNotificationSerializer
+    filterset_class = ScheduledNotificationFilter
+    search_fields = ['title', 'body']
+    ordering_fields = ['id', 'scheduled_at', 'next_run_at', 'status', 'created_at']
+    ordering = ['-created_at']
+    queryset = ScheduledNotification.objects.none()
+
+    def get_queryset(self):
+        if getattr(self, 'swagger_fake_view', False):
+            return ScheduledNotification.objects.none()
+        return ScheduledNotification.objects.filter(created_by=self.request.user)
+
+
+@extend_schema_view(
+    retrieve=extend_schema(summary="Get scheduled notification details", tags=['Scheduled Notifications']),
+    update=extend_schema(summary="Update a scheduled notification", tags=['Scheduled Notifications']),
+    partial_update=extend_schema(summary="Partial update a scheduled notification", tags=['Scheduled Notifications']),
+    destroy=extend_schema(summary="Delete a scheduled notification", tags=['Scheduled Notifications']),
+)
+class ScheduledNotificationRetrieveUpdateDestroyView(generics.RetrieveUpdateDestroyAPIView):
+    serializer_class = ScheduledNotificationSerializer
+    queryset = ScheduledNotification.objects.none()
+
+    def get_queryset(self):
+        if getattr(self, 'swagger_fake_view', False):
+            return ScheduledNotification.objects.none()
+        return ScheduledNotification.objects.filter(created_by=self.request.user)
 
 
 # ============================================================

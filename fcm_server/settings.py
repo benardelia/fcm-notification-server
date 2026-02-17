@@ -146,6 +146,18 @@ CELERY_TIMEZONE = TIME_ZONE
 CELERY_TASK_TRACK_STARTED = True
 CELERY_BROKER_CONNECTION_RETRY_ON_STARTUP = True
 
+# Celery Beat schedule for periodic tasks
+CELERY_BEAT_SCHEDULE = {
+    'process-scheduled-notifications': {
+        'task': 'notification.tasks.process_scheduled_notifications',
+        'schedule': 60.0,  # Every 60 seconds
+    },
+    'cleanup-stale-tokens': {
+        'task': 'notification.tasks.cleanup_stale_tokens',
+        'schedule': 86400.0,  # Every 24 hours
+    },
+}
+
 # Redis Cache
 CACHES = {
     'default': {

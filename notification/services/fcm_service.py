@@ -75,40 +75,69 @@ class FCMService:
         _firebase_apps[app_name] = app
         return app
 
-    def send_to_device(self, token, title, body, data=None, image_url=None, priority='high'):
-        """Send a notification to a single device token."""
-        notification = messaging.Notification(
-            title=title,
-            body=body,
-            image=image_url,
-        )
+    def send_to_device(self, token, title='', body='', data=None, image_url=None,
+                       priority='high', is_silent=False, collapse_key=None,
+                       click_action=None, actions=None):
+        """
+        Send a notification to a single device token.
+
+        Args:
+            is_silent: If True, sends data-only push (no visible notification)
+            collapse_key: Group similar notifications under one key
+            click_action: Deep link URL opened when notification is tapped
+            actions: List of action buttons [{"action": "open", "title": "View"}]
+        """
+        str_data = {k: str(v) for k, v in (data or {}).items()}
+
+        # Add action buttons to data payload so client apps can render them
+        if actions:
+            str_data['_actions'] = json.dumps(actions)
+        if click_action:
+            str_data['_click_action'] = click_action
+
+        # Silent notification: data-only, no notification payload
+        notification = None
+        if not is_silent:
+            notification = messaging.Notification(
+                title=title,
+                body=body,
+                image=image_url or None,
+            )
 
         android_config = messaging.AndroidConfig(
             ttl=datetime.timedelta(seconds=3600),
             priority=priority,
-            notification=messaging.AndroidNotification(
+            collapse_key=collapse_key,
+            notification=None if is_silent else messaging.AndroidNotification(
                 icon="ic_launcher",
                 color='#f45342',
+                click_action=click_action or None,
             ),
         )
 
         apns_config = messaging.APNSConfig(
-            headers={'apns-priority': '10' if priority == 'high' else '5'},
+            headers={
+                'apns-priority': '10' if priority == 'high' else '5',
+                **({'apns-collapse-id': collapse_key} if collapse_key else {}),
+            },
             payload=messaging.APNSPayload(
-                aps=messaging.Aps(badge=42),
+                aps=messaging.Aps(
+                    badge=42,
+                    content_available=is_silent,  # Enable background processing for silent
+                ),
             ),
         )
 
-        webpush_config = messaging.WebpushConfig(
-            notification=messaging.WebpushNotification(
-                title=title,
-                body=body,
-                icon=image_url or '',
-            ),
-        )
-
-        # Ensure all data values are strings (FCM requirement)
-        str_data = {k: str(v) for k, v in (data or {}).items()}
+        webpush_config = None
+        if not is_silent:
+            webpush_config = messaging.WebpushConfig(
+                notification=messaging.WebpushNotification(
+                    title=title,
+                    body=body,
+                    icon=image_url or '',
+                ),
+                fcm_options=messaging.WebpushFCMOptions(link=click_action) if click_action else None,
+            )
 
         message = messaging.Message(
             notification=notification,
@@ -120,27 +149,37 @@ class FCMService:
         )
 
         response = messaging.send(message, app=self.app)
-        logger.info(f"Sent notification to token {token[:20]}...: {response}")
+        logger.info(f"Sent {'silent ' if is_silent else ''}notification to token {token[:20]}...: {response}")
         return response
 
-    def send_multicast(self, tokens, title, body, data=None, image_url=None, priority='high'):
+    def send_multicast(self, tokens, title='', body='', data=None, image_url=None,
+                       priority='high', is_silent=False, collapse_key=None,
+                       click_action=None, actions=None):
         """Send a notification to multiple device tokens (up to 500)."""
-        notification = messaging.Notification(
-            title=title,
-            body=body,
-            image=image_url,
-        )
+        str_data = {k: str(v) for k, v in (data or {}).items()}
+        if actions:
+            str_data['_actions'] = json.dumps(actions)
+        if click_action:
+            str_data['_click_action'] = click_action
+
+        notification = None
+        if not is_silent:
+            notification = messaging.Notification(
+                title=title,
+                body=body,
+                image=image_url or None,
+            )
 
         android_config = messaging.AndroidConfig(
             ttl=datetime.timedelta(seconds=3600),
             priority=priority,
-            notification=messaging.AndroidNotification(
+            collapse_key=collapse_key,
+            notification=None if is_silent else messaging.AndroidNotification(
                 icon="ic_launcher",
                 color='#f45342',
+                click_action=click_action or None,
             ),
         )
-
-        str_data = {k: str(v) for k, v in (data or {}).items()}
 
         message = messaging.MulticastMessage(
             notification=notification,
@@ -156,15 +195,20 @@ class FCMService:
         )
         return response
 
-    def send_to_topic(self, topic, title, body, data=None, image_url=None):
+    def send_to_topic(self, topic, title='', body='', data=None, image_url=None,
+                      is_silent=False, click_action=None):
         """Send a notification to all devices subscribed to a topic."""
-        notification = messaging.Notification(
-            title=title,
-            body=body,
-            image=image_url,
-        )
-
         str_data = {k: str(v) for k, v in (data or {}).items()}
+        if click_action:
+            str_data['_click_action'] = click_action
+
+        notification = None
+        if not is_silent:
+            notification = messaging.Notification(
+                title=title,
+                body=body,
+                image=image_url or None,
+            )
 
         message = messaging.Message(
             notification=notification,
@@ -176,15 +220,18 @@ class FCMService:
         logger.info(f"Sent notification to topic '{topic}': {response}")
         return response
 
-    def send_to_condition(self, condition, title, body, data=None, image_url=None):
+    def send_to_condition(self, condition, title='', body='', data=None, image_url=None,
+                          is_silent=False):
         """Send a notification to devices matching a topic condition."""
-        notification = messaging.Notification(
-            title=title,
-            body=body,
-            image=image_url,
-        )
-
         str_data = {k: str(v) for k, v in (data or {}).items()}
+
+        notification = None
+        if not is_silent:
+            notification = messaging.Notification(
+                title=title,
+                body=body,
+                image=image_url or None,
+            )
 
         message = messaging.Message(
             notification=notification,

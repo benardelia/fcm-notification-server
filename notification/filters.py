@@ -2,6 +2,7 @@ import django_filters
 from .models import (
     Profile, Device, Notification, NotificationDeliveryLog,
     Topic, NotificationTemplate, NotificationAnalytics,
+    ScheduledNotification,
 )
 
 
@@ -58,6 +59,19 @@ class NotificationTemplateFilter(django_filters.FilterSet):
     class Meta:
         model = NotificationTemplate
         fields = ['name', 'is_active']
+
+
+class ScheduledNotificationFilter(django_filters.FilterSet):
+    status = django_filters.ChoiceFilter(choices=ScheduledNotification.STATUS_CHOICES)
+    repeat_interval = django_filters.ChoiceFilter(choices=ScheduledNotification.REPEAT_CHOICES)
+    scheduled_after = django_filters.DateTimeFilter(field_name='scheduled_at', lookup_expr='gte')
+    scheduled_before = django_filters.DateTimeFilter(field_name='scheduled_at', lookup_expr='lte')
+    topic = django_filters.CharFilter(lookup_expr='icontains')
+    title = django_filters.CharFilter(lookup_expr='icontains')
+
+    class Meta:
+        model = ScheduledNotification
+        fields = ['status', 'repeat_interval', 'topic']
 
 
 class AnalyticsFilter(django_filters.FilterSet):

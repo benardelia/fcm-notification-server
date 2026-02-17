@@ -47,17 +47,87 @@ class Notification(models.Model):
         ("sent", "Sent"),
         ("failed", "Failed"),
     )
+    PRIORITY_CHOICES = (
+        ("high", "High"),
+        ("normal", "Normal"),
+    )
 
-    title = models.CharField(max_length=255)
-    body = models.TextField()
+    title = models.CharField(max_length=255, blank=True, default='')
+    body = models.TextField(blank=True, default='')
     data_payload = models.JSONField(blank=True, null=True)  # Extra metadata
+    image_url = models.URLField(blank=True, default='')
     created_at = models.DateTimeField(auto_now_add=True)
     scheduled_at = models.DateTimeField(blank=True, null=True)
     sent_at = models.DateTimeField(blank=True, null=True)
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="pending")
+    priority = models.CharField(max_length=10, choices=PRIORITY_CHOICES, default="high")
+    is_silent = models.BooleanField(default=False)  # Data-only push, no visible notification
+    collapse_key = models.CharField(max_length=100, blank=True, default='')  # Group similar notifications
+    # Rich notification fields
+    click_action = models.URLField(blank=True, default='')  # Deep link URL
+    actions = models.JSONField(blank=True, null=True)  # Action buttons: [{"action": "open", "title": "View"}]
+    # Template reference
+    template = models.ForeignKey('NotificationTemplate', on_delete=models.SET_NULL, null=True, blank=True)
+    template_variables = models.JSONField(blank=True, null=True)  # Variables for template rendering
+    # Retry tracking
+    retry_count = models.IntegerField(default=0)
+    max_retries = models.IntegerField(default=3)
 
     def __str__(self):
-        return self.title
+        return self.title or f"Silent notification #{self.pk}"
+
+
+# ------------------------------
+# Scheduled Notifications
+# ------------------------------
+class ScheduledNotification(models.Model):
+    REPEAT_CHOICES = (
+        ('none', 'No Repeat'),
+        ('daily', 'Daily'),
+        ('weekly', 'Weekly'),
+        ('monthly', 'Monthly'),
+    )
+    STATUS_CHOICES = (
+        ('pending', 'Pending'),
+        ('active', 'Active'),
+        ('paused', 'Paused'),
+        ('completed', 'Completed'),
+        ('cancelled', 'Cancelled'),
+    )
+
+    # What to send
+    title = models.CharField(max_length=255)
+    body = models.TextField()
+    data_payload = models.JSONField(blank=True, null=True)
+    image_url = models.URLField(blank=True, default='')
+    priority = models.CharField(max_length=10, choices=Notification.PRIORITY_CHOICES, default='high')
+    is_silent = models.BooleanField(default=False)
+    click_action = models.URLField(blank=True, default='')
+
+    # Template support
+    template = models.ForeignKey('NotificationTemplate', on_delete=models.SET_NULL, null=True, blank=True)
+    template_variables = models.JSONField(blank=True, null=True)
+
+    # Who to send to
+    phone_numbers = models.JSONField(default=list)  # List of phone numbers
+    topic = models.CharField(max_length=100, blank=True, default='')  # Or send to a topic
+
+    # When to send
+    scheduled_at = models.DateTimeField()
+    repeat_interval = models.CharField(max_length=10, choices=REPEAT_CHOICES, default='none')
+    next_run_at = models.DateTimeField(null=True, blank=True)
+    last_sent_at = models.DateTimeField(null=True, blank=True)
+    max_occurrences = models.IntegerField(null=True, blank=True)
+    occurrence_count = models.IntegerField(default=0)
+
+    # State
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')
+    firebase_project = models.ForeignKey('FirebaseProject', on_delete=models.SET_NULL, null=True, blank=True)
+    created_by = models.ForeignKey('ApiClient', on_delete=models.SET_NULL, null=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"Scheduled: {self.title} @ {self.scheduled_at}"
 
 
 # ------------------------------

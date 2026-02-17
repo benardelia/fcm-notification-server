@@ -1,6 +1,7 @@
 from django.urls import path
 from .views import (
     SendNotificationView, BulkSendNotificationView, TopicNotificationView,
+    TemplateSendView,
     ProfileListCreateView, ProfileRetrieveUpdateDestroyView,
     DeviceListCreateView, DeviceRetrieveUpdateDestroyView,
     NotificationListCreateView, NotificationRetrieveUpdateDestroyView,
@@ -11,6 +12,7 @@ from .views import (
     NotificationTemplateListCreateView, NotificationTemplateRetrieveUpdateDestroyView,
     WebhookEndpointListCreateView, WebhookEndpointRetrieveUpdateDestroyView,
     NotificationAnalyticsListView,
+    ScheduledNotificationListCreateView, ScheduledNotificationRetrieveUpdateDestroyView,
 )
 
 urlpatterns = [
@@ -18,6 +20,11 @@ urlpatterns = [
     path('notify/', SendNotificationView.as_view(), name='send-notification'),
     path('notify/bulk/', BulkSendNotificationView.as_view(), name='bulk-send-notification'),
     path('notify/topic/', TopicNotificationView.as_view(), name='topic-notification'),
+    path('notify/template/', TemplateSendView.as_view(), name='template-send'),
+
+    # --- Scheduled Notifications ---
+    path('scheduled/', ScheduledNotificationListCreateView.as_view(), name='scheduled-list-create'),
+    path('scheduled/<int:pk>/', ScheduledNotificationRetrieveUpdateDestroyView.as_view(), name='scheduled-detail'),
 
     # --- Profiles ---
     path('profile/', ProfileListCreateView.as_view(), name='profile-list-create'),
