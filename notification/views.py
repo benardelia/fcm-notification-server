@@ -6,6 +6,7 @@ from rest_framework.response import Response
 from rest_framework import generics, status
 from rest_framework.permissions import IsAuthenticated
 from django.utils import timezone
+from drf_spectacular.utils import extend_schema, extend_schema_view
 
 from notification.middleware import ApiClientAuthentication
 from .serializers import (
@@ -21,6 +22,11 @@ from .models import (
     Topic, UserTopic, FirebaseProject, NotificationTemplate,
     NotificationAnalytics, WebhookEndpoint,
 )
+from .filters import (
+    ProfileFilter, DeviceFilter, NotificationFilter,
+    DeliveryLogFilter, TopicFilter, NotificationTemplateFilter,
+    AnalyticsFilter,
+)
 from .services import FCMService, dispatch_webhook
 
 logger = logging.getLogger(__name__)
@@ -30,22 +36,21 @@ logger = logging.getLogger(__name__)
 # Notification Sending Views
 # ============================================================
 
+@extend_schema(tags=['Notifications'])
 class SendNotificationView(APIView):
     """
-    Send a notification to a single device by phone number.
+    Send a notification to a single profile's devices by phone number.
 
-    POST /notification/notify/
-    {
-        "phone_number": "+255712345678",
-        "title": "Hello",
-        "body": "World",
-        "data": {"key": "value"},
-        "image_url": "https://example.com/image.png",
-        "priority": "high",
-        "firebase_project_id": 1  // optional, for multi-tenant
-    }
+    Automatically sends to **all active devices** registered under the profile.
+    - 1 device: uses direct FCM send
+    - 2+ devices: uses FCM multicast (single API call)
     """
 
+    @extend_schema(
+        request=SendNotificationSerializer,
+        responses={200: dict},
+        summary="Send notification to a phone number",
+    )
     def post(self, request):
         serializer = SendNotificationSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -62,7 +67,7 @@ class SendNotificationView(APIView):
         devices = profile.devices.filter(is_active=True)
         if not devices.exists():
             return Response(
-                {"error": "No active device found for this profile."},
+                {"success": False, "error": {"code": "not_found", "message": "No active device found for this profile."}},
                 status=status.HTTP_404_NOT_FOUND
             )
 
@@ -89,31 +94,19 @@ class SendNotificationView(APIView):
             results = []
 
             if len(tokens) == 1:
-                # Single device — direct send
                 response_id = fcm.send_to_device(
-                    token=tokens[0],
-                    title=title,
-                    body=body,
-                    data=data,
-                    image_url=image_url,
-                    priority=priority,
+                    token=tokens[0], title=title, body=body,
+                    data=data, image_url=image_url, priority=priority,
                 )
                 results.append({"device_id": devices[0].pk, "status": "sent", "response": str(response_id)})
                 NotificationDeliveryLog.objects.create(
-                    notification=notification,
-                    device=devices[0],
-                    delivered_at=timezone.now(),
-                    status="sent",
+                    notification=notification, device=devices[0],
+                    delivered_at=timezone.now(), status="sent",
                 )
             else:
-                # Multiple devices — multicast
                 response = fcm.send_multicast(
-                    tokens=tokens,
-                    title=title,
-                    body=body,
-                    data=data,
-                    image_url=image_url,
-                    priority=priority,
+                    tokens=tokens, title=title, body=body,
+                    data=data, image_url=image_url, priority=priority,
                 )
                 for i, device in enumerate(devices):
                     individual_status = "sent"
@@ -130,11 +123,9 @@ class SendNotificationView(APIView):
                         "error": error_message,
                     })
                     NotificationDeliveryLog.objects.create(
-                        notification=notification,
-                        device=device,
+                        notification=notification, device=device,
                         delivered_at=timezone.now() if individual_status == "sent" else None,
-                        status=individual_status,
-                        error_message=error_message,
+                        status=individual_status, error_message=error_message,
                     )
 
             # Dispatch webhook event
@@ -157,24 +148,25 @@ class SendNotificationView(APIView):
         except Exception as e:
             logger.error(f"Error sending notification: {e}")
             return Response(
-                {"error": str(e)},
+                {"success": False, "error": {"code": "send_failed", "message": str(e)}},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
 
 
+@extend_schema(tags=['Notifications'])
 class BulkSendNotificationView(APIView):
     """
     Send a notification to multiple phone numbers at once.
 
-    POST /notification/notify/bulk/
-    {
-        "phone_numbers": ["+255712345678", "+255712345679"],
-        "title": "Announcement",
-        "body": "Important update",
-        "data": {"key": "value"}
-    }
+    Collects all active devices across the provided phone numbers
+    and sends via FCM multicast (up to 500 tokens per call).
     """
 
+    @extend_schema(
+        request=BulkSendNotificationSerializer,
+        responses={200: dict},
+        summary="Bulk send notification to multiple phone numbers",
+    )
     def post(self, request):
         serializer = BulkSendNotificationSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -187,7 +179,6 @@ class BulkSendNotificationView(APIView):
         priority = serializer.validated_data.get('priority', 'high')
         firebase_project_id = serializer.validated_data.get('firebase_project_id')
 
-        # Collect active device tokens
         devices = Device.objects.filter(
             profile__phone_number__in=phone_numbers,
             is_active=True,
@@ -195,7 +186,7 @@ class BulkSendNotificationView(APIView):
 
         if not devices.exists():
             return Response(
-                {"error": "No active devices found for the provided phone numbers."},
+                {"success": False, "error": {"code": "not_found", "message": "No active devices found for the provided phone numbers."}},
                 status=status.HTTP_404_NOT_FOUND,
             )
 
@@ -210,23 +201,15 @@ class BulkSendNotificationView(APIView):
         try:
             fcm = FCMService(firebase_project=firebase_project)
             response = fcm.send_multicast(
-                tokens=tokens,
-                title=title,
-                body=body,
-                data=data,
-                image_url=image_url,
-                priority=priority,
+                tokens=tokens, title=title, body=body,
+                data=data, image_url=image_url, priority=priority,
             )
 
             notification = Notification.objects.create(
-                title=title,
-                body=body,
-                data_payload=data,
-                status="sent",
-                sent_at=timezone.now(),
+                title=title, body=body, data_payload=data,
+                status="sent", sent_at=timezone.now(),
             )
 
-            # Create delivery logs for each device
             logs = []
             for i, device in enumerate(devices):
                 individual_status = "sent"
@@ -235,13 +218,10 @@ class BulkSendNotificationView(APIView):
                     if not response.responses[i].success:
                         individual_status = "failed"
                         error_message = str(response.responses[i].exception)
-
                 logs.append(NotificationDeliveryLog(
-                    notification=notification,
-                    device=device,
+                    notification=notification, device=device,
                     delivered_at=timezone.now() if individual_status == "sent" else None,
-                    status=individual_status,
-                    error_message=error_message,
+                    status=individual_status, error_message=error_message,
                 ))
             NotificationDeliveryLog.objects.bulk_create(logs)
 
@@ -257,23 +237,22 @@ class BulkSendNotificationView(APIView):
         except Exception as e:
             logger.error(f"Error sending bulk notification: {e}")
             return Response(
-                {"error": str(e)},
+                {"success": False, "error": {"code": "send_failed", "message": str(e)}},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
 
 
+@extend_schema(tags=['Notifications'])
 class TopicNotificationView(APIView):
     """
-    Send a notification to all subscribers of a topic.
-
-    POST /notification/notify/topic/
-    {
-        "topic": "news",
-        "title": "Breaking News",
-        "body": "Something happened"
-    }
+    Send a notification to all devices subscribed to an FCM topic.
     """
 
+    @extend_schema(
+        request=TopicNotificationSerializer,
+        responses={200: dict},
+        summary="Send notification to a topic",
+    )
     def post(self, request):
         serializer = TopicNotificationSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -294,19 +273,14 @@ class TopicNotificationView(APIView):
         try:
             fcm = FCMService(firebase_project=firebase_project)
             response_id = fcm.send_to_topic(
-                topic=topic_name,
-                title=title,
-                body=body,
-                data=data,
-                image_url=image_url,
+                topic=topic_name, title=title, body=body,
+                data=data, image_url=image_url,
             )
 
             notification = Notification.objects.create(
-                title=title,
-                body=body,
+                title=title, body=body,
                 data_payload={**data, '_topic': topic_name},
-                status="sent",
-                sent_at=timezone.now(),
+                status="sent", sent_at=timezone.now(),
             )
 
             return Response({
@@ -319,60 +293,149 @@ class TopicNotificationView(APIView):
         except Exception as e:
             logger.error(f"Error sending topic notification: {e}")
             return Response(
-                {"error": str(e)},
+                {"success": False, "error": {"code": "send_failed", "message": str(e)}},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
 
 
 # ============================================================
-# CRUD Views — Existing Models
+# CRUD Views — with filtering, search, ordering
 # ============================================================
 
+@extend_schema_view(
+    list=extend_schema(summary="List profiles", tags=['Profiles']),
+    create=extend_schema(summary="Create a profile", tags=['Profiles']),
+)
 class ProfileListCreateView(generics.ListCreateAPIView):
     queryset = Profile.objects.all()
     serializer_class = ProfileSerializer
+    filterset_class = ProfileFilter
+    search_fields = ['phone_number']
+    ordering_fields = ['id', 'phone_number']
+    ordering = ['id']
 
+
+@extend_schema_view(
+    retrieve=extend_schema(summary="Get profile details", tags=['Profiles']),
+    update=extend_schema(summary="Update a profile", tags=['Profiles']),
+    partial_update=extend_schema(summary="Partial update a profile", tags=['Profiles']),
+    destroy=extend_schema(summary="Delete a profile", tags=['Profiles']),
+)
 class ProfileRetrieveUpdateDestroyView(generics.RetrieveUpdateDestroyAPIView):
     queryset = Profile.objects.all()
     serializer_class = ProfileSerializer
 
 
+@extend_schema_view(
+    list=extend_schema(summary="List devices", tags=['Devices']),
+    create=extend_schema(summary="Register a device", tags=['Devices']),
+)
 class DeviceListCreateView(generics.ListCreateAPIView):
     queryset = Device.objects.all()
     serializer_class = DeviceSerializer
+    filterset_class = DeviceFilter
+    search_fields = ['push_token', 'profile__phone_number']
+    ordering_fields = ['id', 'last_seen', 'device_type']
+    ordering = ['-last_seen']
 
+
+@extend_schema_view(
+    retrieve=extend_schema(summary="Get device details", tags=['Devices']),
+    update=extend_schema(summary="Update a device", tags=['Devices']),
+    partial_update=extend_schema(summary="Partial update a device", tags=['Devices']),
+    destroy=extend_schema(summary="Delete a device", tags=['Devices']),
+)
 class DeviceRetrieveUpdateDestroyView(generics.RetrieveUpdateDestroyAPIView):
     queryset = Device.objects.all()
     serializer_class = DeviceSerializer
 
+
+@extend_schema_view(
+    list=extend_schema(summary="List notifications", tags=['Notifications']),
+    create=extend_schema(summary="Create a notification record", tags=['Notifications']),
+)
 class NotificationListCreateView(generics.ListCreateAPIView):
     queryset = Notification.objects.all()
     serializer_class = NotificationSerializer
+    filterset_class = NotificationFilter
+    search_fields = ['title', 'body']
+    ordering_fields = ['id', 'created_at', 'sent_at', 'status']
+    ordering = ['-created_at']
 
+
+@extend_schema_view(
+    retrieve=extend_schema(summary="Get notification details", tags=['Notifications']),
+    update=extend_schema(summary="Update a notification", tags=['Notifications']),
+    partial_update=extend_schema(summary="Partial update a notification", tags=['Notifications']),
+    destroy=extend_schema(summary="Delete a notification", tags=['Notifications']),
+)
 class NotificationRetrieveUpdateDestroyView(generics.RetrieveUpdateDestroyAPIView):
     queryset = Notification.objects.all()
     serializer_class = NotificationSerializer
 
+
+@extend_schema_view(
+    list=extend_schema(summary="List delivery logs", tags=['Notifications']),
+    create=extend_schema(summary="Create a delivery log", tags=['Notifications']),
+)
 class NotificationDeliveryLogListCreateView(generics.ListCreateAPIView):
     queryset = NotificationDeliveryLog.objects.all()
     serializer_class = NotificationDeliveryLogSerializer
+    filterset_class = DeliveryLogFilter
+    ordering_fields = ['id', 'delivered_at', 'read_at', 'status']
+    ordering = ['-delivered_at']
 
+
+@extend_schema_view(
+    retrieve=extend_schema(summary="Get delivery log details", tags=['Notifications']),
+    update=extend_schema(summary="Update a delivery log", tags=['Notifications']),
+    partial_update=extend_schema(summary="Partial update a delivery log", tags=['Notifications']),
+    destroy=extend_schema(summary="Delete a delivery log", tags=['Notifications']),
+)
 class NotificationDeliveryLogRetrieveUpdateDestroyView(generics.RetrieveUpdateDestroyAPIView):
     queryset = NotificationDeliveryLog.objects.all()
     serializer_class = NotificationDeliveryLogSerializer
 
+
+@extend_schema_view(
+    list=extend_schema(summary="List topics", tags=['Topics']),
+    create=extend_schema(summary="Create a topic", tags=['Topics']),
+)
 class TopicListCreateView(generics.ListCreateAPIView):
     queryset = Topic.objects.all()
     serializer_class = TopicSerializer
+    filterset_class = TopicFilter
+    search_fields = ['name', 'description']
+    ordering_fields = ['id', 'name', 'created_at']
+    ordering = ['name']
 
+
+@extend_schema_view(
+    retrieve=extend_schema(summary="Get topic details", tags=['Topics']),
+    update=extend_schema(summary="Update a topic", tags=['Topics']),
+    partial_update=extend_schema(summary="Partial update a topic", tags=['Topics']),
+    destroy=extend_schema(summary="Delete a topic", tags=['Topics']),
+)
 class TopicRetrieveUpdateDestroyView(generics.RetrieveUpdateDestroyAPIView):
     queryset = Topic.objects.all()
     serializer_class = TopicSerializer
 
+
+@extend_schema_view(
+    list=extend_schema(summary="List user-topic subscriptions", tags=['Topics']),
+    create=extend_schema(summary="Subscribe user to topic", tags=['Topics']),
+)
 class UserTopicListCreateView(generics.ListCreateAPIView):
     queryset = UserTopic.objects.all()
     serializer_class = UserTopicSerializer
 
+
+@extend_schema_view(
+    retrieve=extend_schema(summary="Get user-topic details", tags=['Topics']),
+    update=extend_schema(summary="Update user-topic", tags=['Topics']),
+    partial_update=extend_schema(summary="Partial update user-topic", tags=['Topics']),
+    destroy=extend_schema(summary="Unsubscribe user from topic", tags=['Topics']),
+)
 class UserTopicRetrieveUpdateDestroyView(generics.RetrieveUpdateDestroyAPIView):
     queryset = UserTopic.objects.all()
     serializer_class = UserTopicSerializer
@@ -384,66 +447,117 @@ class UserTopicRetrieveUpdateDestroyView(generics.RetrieveUpdateDestroyAPIView):
 # Configuration API — Firebase Projects, Templates, Webhooks
 # ============================================================
 
+@extend_schema_view(
+    list=extend_schema(summary="List your Firebase projects", tags=['Firebase Projects']),
+    create=extend_schema(summary="Register a Firebase project", tags=['Firebase Projects']),
+)
 class FirebaseProjectListCreateView(generics.ListCreateAPIView):
     serializer_class = FirebaseProjectSerializer
+    queryset = FirebaseProject.objects.none()
 
     def get_queryset(self):
-        # Only show Firebase projects belonging to the authenticated client
+        if getattr(self, 'swagger_fake_view', False):
+            return FirebaseProject.objects.none()
         return FirebaseProject.objects.filter(api_client=self.request.user)
 
 
+@extend_schema_view(
+    retrieve=extend_schema(summary="Get Firebase project details", tags=['Firebase Projects']),
+    update=extend_schema(summary="Update a Firebase project", tags=['Firebase Projects']),
+    partial_update=extend_schema(summary="Partial update a Firebase project", tags=['Firebase Projects']),
+    destroy=extend_schema(summary="Delete a Firebase project", tags=['Firebase Projects']),
+)
 class FirebaseProjectRetrieveUpdateDestroyView(generics.RetrieveUpdateDestroyAPIView):
     serializer_class = FirebaseProjectSerializer
+    queryset = FirebaseProject.objects.none()
 
     def get_queryset(self):
+        if getattr(self, 'swagger_fake_view', False):
+            return FirebaseProject.objects.none()
         return FirebaseProject.objects.filter(api_client=self.request.user)
 
 
+@extend_schema_view(
+    list=extend_schema(summary="List notification templates", tags=['Templates']),
+    create=extend_schema(summary="Create a notification template", tags=['Templates']),
+)
 class NotificationTemplateListCreateView(generics.ListCreateAPIView):
     queryset = NotificationTemplate.objects.filter(is_active=True)
     serializer_class = NotificationTemplateSerializer
+    filterset_class = NotificationTemplateFilter
+    search_fields = ['name', 'title_template', 'body_template']
+    ordering_fields = ['id', 'name', 'created_at']
+    ordering = ['name']
 
 
+@extend_schema_view(
+    retrieve=extend_schema(summary="Get template details", tags=['Templates']),
+    update=extend_schema(summary="Update a template", tags=['Templates']),
+    partial_update=extend_schema(summary="Partial update a template", tags=['Templates']),
+    destroy=extend_schema(summary="Delete a template", tags=['Templates']),
+)
 class NotificationTemplateRetrieveUpdateDestroyView(generics.RetrieveUpdateDestroyAPIView):
     queryset = NotificationTemplate.objects.all()
     serializer_class = NotificationTemplateSerializer
 
 
+@extend_schema_view(
+    list=extend_schema(summary="List your webhooks", tags=['Webhooks']),
+    create=extend_schema(summary="Register a webhook endpoint", tags=['Webhooks']),
+)
 class WebhookEndpointListCreateView(generics.ListCreateAPIView):
     serializer_class = WebhookEndpointSerializer
+    queryset = WebhookEndpoint.objects.none()
 
     def get_queryset(self):
+        if getattr(self, 'swagger_fake_view', False):
+            return WebhookEndpoint.objects.none()
         return WebhookEndpoint.objects.filter(api_client=self.request.user)
 
 
+@extend_schema_view(
+    retrieve=extend_schema(summary="Get webhook details", tags=['Webhooks']),
+    update=extend_schema(summary="Update a webhook", tags=['Webhooks']),
+    partial_update=extend_schema(summary="Partial update a webhook", tags=['Webhooks']),
+    destroy=extend_schema(summary="Delete a webhook", tags=['Webhooks']),
+)
 class WebhookEndpointRetrieveUpdateDestroyView(generics.RetrieveUpdateDestroyAPIView):
     serializer_class = WebhookEndpointSerializer
+    queryset = WebhookEndpoint.objects.none()
 
     def get_queryset(self):
+        if getattr(self, 'swagger_fake_view', False):
+            return WebhookEndpoint.objects.none()
         return WebhookEndpoint.objects.filter(api_client=self.request.user)
 
 
+@extend_schema_view(
+    list=extend_schema(summary="List notification analytics", tags=['Analytics']),
+)
 class NotificationAnalyticsListView(generics.ListAPIView):
     queryset = NotificationAnalytics.objects.all().order_by('-date')
     serializer_class = NotificationAnalyticsSerializer
+    filterset_class = AnalyticsFilter
+    ordering_fields = ['date', 'total_sent', 'total_delivered', 'total_failed']
+    ordering = ['-date']
 
 
 # ============================================================
 # Health Check
 # ============================================================
 
+@extend_schema(tags=['Health'])
 class HealthCheckView(APIView):
     """
-    GET /health/
+    Service health check endpoint.
 
-    Returns the health status of all services:
-    - database: PostgreSQL connection
-    - redis: Redis connection
-    - firebase: Firebase SDK initialized
+    Returns the status of database, Redis cache, and Firebase SDK.
+    No authentication required.
     """
-    permission_classes = []  # Public endpoint, no auth required
+    permission_classes = []
     authentication_classes = []
 
+    @extend_schema(summary="Check service health", responses={200: dict})
     def get(self, request):
         health = {}
 
@@ -470,12 +584,15 @@ class HealthCheckView(APIView):
         # Check Firebase
         try:
             import firebase_admin
-            app = firebase_admin.get_app()
+            firebase_admin.get_app()
             health['firebase'] = 'healthy'
         except Exception:
             health['firebase'] = 'not initialized (will init on first send)'
 
-        all_healthy = all(v == 'healthy' for v in health.values() if v != 'not initialized (will init on first send)')
+        all_healthy = all(
+            v == 'healthy' for v in health.values()
+            if v != 'not initialized (will init on first send)'
+        )
         http_status = status.HTTP_200_OK if all_healthy else status.HTTP_503_SERVICE_UNAVAILABLE
 
         return Response({

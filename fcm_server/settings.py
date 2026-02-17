@@ -50,6 +50,8 @@ INSTALLED_APPS = [
     'django.contrib.messages',
     'django.contrib.staticfiles',
     'rest_framework',
+    'django_filters',
+    'drf_spectacular',
     'django_celery_results',
     'notification',
 ]
@@ -157,17 +159,51 @@ CACHES = {
 
 
 REST_FRAMEWORK = {
-    # Use Django's standard `django.contrib.auth` permissions,
-    # or allow read-only access for unauthenticated users.
-    # 'DEFAULT_PERMISSION_CLASSES': [
-    #     'rest_framework.permissions.DjangoModelPermissionsOrAnonReadOnly'
-    # ],
     'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
 
-    "DEFAULT_AUTHENTICATION_CLASSES": [
-        "notification.middleware.ApiClientAuthentication",
+    'DEFAULT_AUTHENTICATION_CLASSES': [
+        'notification.middleware.ApiClientAuthentication',
     ],
-    "DEFAULT_PERMISSION_CLASSES": [
-        "rest_framework.permissions.IsAuthenticated",
+    'DEFAULT_PERMISSION_CLASSES': [
+        'rest_framework.permissions.IsAuthenticated',
     ],
+
+    # Cursor-based pagination
+    'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.CursorPagination',
+    'PAGE_SIZE': 50,
+
+    # Filtering
+    'DEFAULT_FILTER_BACKENDS': [
+        'django_filters.rest_framework.DjangoFilterBackend',
+        'rest_framework.filters.SearchFilter',
+        'rest_framework.filters.OrderingFilter',
+    ],
+
+    # Consistent error responses
+    'EXCEPTION_HANDLER': 'notification.exceptions.custom_exception_handler',
+}
+
+
+# drf-spectacular (Swagger / OpenAPI)
+SPECTACULAR_SETTINGS = {
+    'TITLE': 'FCM Notification Server API',
+    'DESCRIPTION': 'Multi-tenant Firebase Cloud Messaging notification server with webhook support, '
+                   'bulk sending, topic broadcasting, and delivery tracking.',
+    'VERSION': '1.0.0',
+    'SERVE_INCLUDE_SCHEMA': False,
+
+    # Group endpoints by tag
+    'TAGS': [
+        {'name': 'Notifications', 'description': 'Send push notifications'},
+        {'name': 'Devices', 'description': 'Manage device registrations'},
+        {'name': 'Profiles', 'description': 'User profile management'},
+        {'name': 'Topics', 'description': 'Topic subscription management'},
+        {'name': 'Templates', 'description': 'Notification templates'},
+        {'name': 'Firebase Projects', 'description': 'Multi-tenant Firebase project management'},
+        {'name': 'Webhooks', 'description': 'Webhook endpoint management'},
+        {'name': 'Analytics', 'description': 'Notification analytics'},
+        {'name': 'Health', 'description': 'Service health checks'},
+    ],
+
+    'COMPONENT_SPLIT_REQUEST': True,
 }

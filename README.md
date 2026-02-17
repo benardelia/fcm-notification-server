@@ -37,6 +37,18 @@ Keep a status log to know who received/read the notification.
 Use a data payload (JSON) to navigate users inside the app.
 
 
+## To run locally (without Docker), create the PostgreSQL database first:
+
+
+    createdb -U DB_USER notification
+    python manage.py migrate
+    python manage.py runserver
+    And in another terminal for Celery:
+.
+
+    celery -A fcm_server worker -l info
+
+
 ## SDK Usage from Other Projects
 
     from sdk import FCMClient
