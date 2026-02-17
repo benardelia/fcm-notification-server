@@ -1,0 +1,13 @@
+-r base.txt
+
+# WSGI Server
+gunicorn>=22.0,<23.0
+
+# Static files
+whitenoise>=6.7,<7.0
+
+# Monitoring
+sentry-sdk>=2.10
+
+# Celery Beat (scheduled tasks in DB)
+django-celery-beat>=2.7,<3.0

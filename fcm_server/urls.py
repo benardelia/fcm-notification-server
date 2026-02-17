@@ -16,6 +16,7 @@ Including another URLconf
 """
 from django.contrib import admin
 from django.urls import path, include
+from notification.views import HealthCheckView
 
 
 
@@ -27,5 +28,5 @@ urlpatterns = [
     path('admin/', admin.site.urls),
     path('notification/', include('notification.urls')),
     path('api-auth/', include('rest_framework.urls')),
-    
+    path('health/', HealthCheckView.as_view(), name='health-check'),
 ]

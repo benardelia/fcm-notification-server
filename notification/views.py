@@ -426,3 +426,59 @@ class WebhookEndpointRetrieveUpdateDestroyView(generics.RetrieveUpdateDestroyAPI
 class NotificationAnalyticsListView(generics.ListAPIView):
     queryset = NotificationAnalytics.objects.all().order_by('-date')
     serializer_class = NotificationAnalyticsSerializer
+
+
+# ============================================================
+# Health Check
+# ============================================================
+
+class HealthCheckView(APIView):
+    """
+    GET /health/
+
+    Returns the health status of all services:
+    - database: PostgreSQL connection
+    - redis: Redis connection
+    - firebase: Firebase SDK initialized
+    """
+    permission_classes = []  # Public endpoint, no auth required
+    authentication_classes = []
+
+    def get(self, request):
+        health = {}
+
+        # Check database
+        try:
+            from django.db import connection
+            with connection.cursor() as cursor:
+                cursor.execute("SELECT 1")
+            health['database'] = 'healthy'
+        except Exception as e:
+            health['database'] = f'unhealthy: {e}'
+
+        # Check Redis
+        try:
+            from django.core.cache import cache
+            cache.set('health_check', 'ok', 10)
+            if cache.get('health_check') == 'ok':
+                health['redis'] = 'healthy'
+            else:
+                health['redis'] = 'unhealthy: cache read failed'
+        except Exception as e:
+            health['redis'] = f'unhealthy: {e}'
+
+        # Check Firebase
+        try:
+            import firebase_admin
+            app = firebase_admin.get_app()
+            health['firebase'] = 'healthy'
+        except Exception:
+            health['firebase'] = 'not initialized (will init on first send)'
+
+        all_healthy = all(v == 'healthy' for v in health.values() if v != 'not initialized (will init on first send)')
+        http_status = status.HTTP_200_OK if all_healthy else status.HTTP_503_SERVICE_UNAVAILABLE
+
+        return Response({
+            'status': 'healthy' if all_healthy else 'degraded',
+            'services': health,
+        }, status=http_status)

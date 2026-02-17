@@ -1,0 +1,20 @@
+# Django
+Django>=5.2,<6.0
+djangorestframework>=3.16,<4.0
+django-environ>=0.12
+
+# Firebase
+firebase-admin>=6.8,<7.0
+
+# Database
+psycopg2-binary>=2.9,<3.0
+
+# Celery + Redis
+celery>=5.6,<6.0
+redis>=7.0,<8.0
+django-redis>=6.0,<7.0
+django-celery-results>=2.5,<3.0
+
+# API
+django-filter>=25.1
+drf-spectacular>=0.28

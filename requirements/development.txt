@@ -1,0 +1,14 @@
+-r base.txt
+
+# Debugging
+django-debug-toolbar>=4.4
+
+# Testing
+factory-boy>=3.3
+pytest-django>=4.8
+pytest-cov>=5.0
+
+# Code quality
+flake8>=7.0
+black>=24.0
+isort>=5.13
