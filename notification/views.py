@@ -1,97 +1,332 @@
-from django.http import HttpResponse, JsonResponse
-from django.shortcuts import get_object_or_404, render
-import firebase_admin
-from firebase_admin import credentials
+import logging
+
+from django.shortcuts import get_object_or_404
 from rest_framework.views import APIView
 from rest_framework.response import Response
-from notification.middleware import ApiClientAuthentication
-from .serializers import *
-from notification.models import Profile
-from .cloud_messaging import all_platforms_message, send_to_token, send_multicast
 from rest_framework import generics, status
 from rest_framework.permissions import IsAuthenticated
 from django.utils import timezone
-# Create your views here.
 
-# cred = credentials.Certificate("vilcom-restaurant-firebase-adminsdk-fbsvc-366d5c2bb6.json")
-cred = credentials.Certificate("ardhi-kiganjani-firebase-adminsdk-fbsvc-b5a11c4c3e.json")   # keep these files private never push to the public repositories
+from notification.middleware import ApiClientAuthentication
+from .serializers import (
+    ProfileSerializer, DeviceSerializer, NotificationSerializer,
+    NotificationDeliveryLogSerializer, TopicSerializer, UserTopicSerializer,
+    SendNotificationSerializer, BulkSendNotificationSerializer,
+    TopicNotificationSerializer, FirebaseProjectSerializer,
+    NotificationTemplateSerializer, NotificationAnalyticsSerializer,
+    WebhookEndpointSerializer,
+)
+from .models import (
+    Profile, Device, Notification, NotificationDeliveryLog,
+    Topic, UserTopic, FirebaseProject, NotificationTemplate,
+    NotificationAnalytics, WebhookEndpoint,
+)
+from .services import FCMService, dispatch_webhook
 
-# Check if Firebase has already been initialized
-if not firebase_admin._apps:
-    default_app = firebase_admin.initialize_app(cred)
-else:
-    default_app = firebase_admin.get_app()
+logger = logging.getLogger(__name__)
 
-## or you can user this for security / in production
-# export GOOGLE_APPLICATION_CREDENTIALS="/path/to/vilcom-restaurant-firebase-adminsdk-fbsvc-366d5c2bb6.json"
-## then initialize the app
-# default_app = firebase_admin.initialize_app()
-# documentation here https://firebase.google.com/docs/cloud-messaging/auth-server
-    
+
+# ============================================================
+# Notification Sending Views
+# ============================================================
+
 class SendNotificationView(APIView):
+    """
+    Send a notification to a single device by phone number.
 
-    def get(self, request):
+    POST /notification/notify/
+    {
+        "phone_number": "+255712345678",
+        "title": "Hello",
+        "body": "World",
+        "data": {"key": "value"},
+        "image_url": "https://example.com/image.png",
+        "priority": "high",
+        "firebase_project_id": 1  // optional, for multi-tenant
+    }
+    """
+
+    def post(self, request):
+        serializer = SendNotificationSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        phone_number = serializer.validated_data['phone_number']
+        title = serializer.validated_data['title']
+        body = serializer.validated_data['body']
+        data = serializer.validated_data.get('data', {})
+        image_url = serializer.validated_data.get('image_url', '')
+        priority = serializer.validated_data.get('priority', 'high')
+        firebase_project_id = serializer.validated_data.get('firebase_project_id')
+
+        profile = get_object_or_404(Profile, phone_number=phone_number)
+        devices = profile.devices.filter(is_active=True)
+        if not devices.exists():
+            return Response(
+                {"error": "No active device found for this profile."},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+        # Resolve Firebase project (multi-tenant or default)
+        firebase_project = None
+        if firebase_project_id:
+            firebase_project = get_object_or_404(
+                FirebaseProject, pk=firebase_project_id, is_active=True
+            )
+
         try:
-            phone_number = request.query_params.get('phone_number')
-            if not phone_number:
-                return Response(
-                    {"error": "Please provide a phone_number parameter."},
-                    status=status.HTTP_400_BAD_REQUEST
-                )
+            fcm = FCMService(firebase_project=firebase_project)
 
-            profile = get_object_or_404(Profile, phone_number=phone_number)
-
-            device = profile.devices.first()
-            if not device:
-                return Response(
-                    {"error": "No device found for this profile."},
-                    status=status.HTTP_404_NOT_FOUND
-                )
-            
-            print(f"Sending notification to device with token: {device}")
-        
-            title = 'Kiwanja Chako'
-            body = 'Kiwanja chako chenye namba 127 ilazo, Dodoma. Hati yake iko tayari fika ofisi yetu Dodoma upate. Asante!.'
-            data = {"type": "info", "transaction": "GRO"}
-
-            token = device.push_token
-            sent_notification = all_platforms_message(token, title=title, body=body, data=data)
-            # sent_notification = send_multicast([token], title=title, body=body, data=data)
             notification = Notification.objects.create(
                 title=title,
                 body=body,
                 data_payload=data,
                 status="sent",
-                scheduled_at=timezone.now(),
-                sent_at=timezone.now()
+                sent_at=timezone.now(),
+            )
+
+            # Send to ALL active devices for this profile
+            tokens = [d.push_token for d in devices]
+            results = []
+
+            if len(tokens) == 1:
+                # Single device — direct send
+                response_id = fcm.send_to_device(
+                    token=tokens[0],
+                    title=title,
+                    body=body,
+                    data=data,
+                    image_url=image_url,
+                    priority=priority,
                 )
+                results.append({"device_id": devices[0].pk, "status": "sent", "response": str(response_id)})
+                NotificationDeliveryLog.objects.create(
+                    notification=notification,
+                    device=devices[0],
+                    delivered_at=timezone.now(),
+                    status="sent",
+                )
+            else:
+                # Multiple devices — multicast
+                response = fcm.send_multicast(
+                    tokens=tokens,
+                    title=title,
+                    body=body,
+                    data=data,
+                    image_url=image_url,
+                    priority=priority,
+                )
+                for i, device in enumerate(devices):
+                    individual_status = "sent"
+                    error_message = None
+                    if hasattr(response, 'responses') and i < len(response.responses):
+                        if not response.responses[i].success:
+                            individual_status = "failed"
+                            error_message = str(response.responses[i].exception)
 
-            NotificationDeliveryLog.objects.create(
-                notification=notification,
-                device=device,
-                delivered_at=timezone.now(),
-                status="sent",
-            )
+                    results.append({
+                        "device_id": device.pk,
+                        "device_type": device.device_type,
+                        "status": individual_status,
+                        "error": error_message,
+                    })
+                    NotificationDeliveryLog.objects.create(
+                        notification=notification,
+                        device=device,
+                        delivered_at=timezone.now() if individual_status == "sent" else None,
+                        status=individual_status,
+                        error_message=error_message,
+                    )
 
-            print(f"Notification sent successfully: {sent_notification}")
+            # Dispatch webhook event
+            api_client = getattr(request, 'user', None)
+            if api_client and hasattr(api_client, 'pk'):
+                dispatch_webhook('notification.sent', {
+                    'notification_id': notification.pk,
+                    'phone_number': phone_number,
+                    'title': title,
+                    'devices_count': len(tokens),
+                }, api_client)
 
-            return Response(
-                {
-                    "success": True,
-                    "message": "Notification sent successfully",
-                    "response": str(sent_notification)
-                },
-                status=status.HTTP_200_OK
-            )
+            return Response({
+                "success": True,
+                "message": f"Notification sent to {len(tokens)} device(s)",
+                "notification_id": notification.pk,
+                "devices": results,
+            }, status=status.HTTP_200_OK)
 
         except Exception as e:
-            print(f"Error sending notification: {e}")
+            logger.error(f"Error sending notification: {e}")
             return Response(
                 {"error": str(e)},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
 
 
+class BulkSendNotificationView(APIView):
+    """
+    Send a notification to multiple phone numbers at once.
+
+    POST /notification/notify/bulk/
+    {
+        "phone_numbers": ["+255712345678", "+255712345679"],
+        "title": "Announcement",
+        "body": "Important update",
+        "data": {"key": "value"}
+    }
+    """
+
+    def post(self, request):
+        serializer = BulkSendNotificationSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        phone_numbers = serializer.validated_data['phone_numbers']
+        title = serializer.validated_data['title']
+        body = serializer.validated_data['body']
+        data = serializer.validated_data.get('data', {})
+        image_url = serializer.validated_data.get('image_url', '')
+        priority = serializer.validated_data.get('priority', 'high')
+        firebase_project_id = serializer.validated_data.get('firebase_project_id')
+
+        # Collect active device tokens
+        devices = Device.objects.filter(
+            profile__phone_number__in=phone_numbers,
+            is_active=True,
+        ).select_related('profile')
+
+        if not devices.exists():
+            return Response(
+                {"error": "No active devices found for the provided phone numbers."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        tokens = [d.push_token for d in devices]
+
+        firebase_project = None
+        if firebase_project_id:
+            firebase_project = get_object_or_404(
+                FirebaseProject, pk=firebase_project_id, is_active=True
+            )
+
+        try:
+            fcm = FCMService(firebase_project=firebase_project)
+            response = fcm.send_multicast(
+                tokens=tokens,
+                title=title,
+                body=body,
+                data=data,
+                image_url=image_url,
+                priority=priority,
+            )
+
+            notification = Notification.objects.create(
+                title=title,
+                body=body,
+                data_payload=data,
+                status="sent",
+                sent_at=timezone.now(),
+            )
+
+            # Create delivery logs for each device
+            logs = []
+            for i, device in enumerate(devices):
+                individual_status = "sent"
+                error_message = None
+                if hasattr(response, 'responses') and i < len(response.responses):
+                    if not response.responses[i].success:
+                        individual_status = "failed"
+                        error_message = str(response.responses[i].exception)
+
+                logs.append(NotificationDeliveryLog(
+                    notification=notification,
+                    device=device,
+                    delivered_at=timezone.now() if individual_status == "sent" else None,
+                    status=individual_status,
+                    error_message=error_message,
+                ))
+            NotificationDeliveryLog.objects.bulk_create(logs)
+
+            return Response({
+                "success": True,
+                "message": "Bulk notification sent",
+                "notification_id": notification.pk,
+                "total_devices": len(tokens),
+                "success_count": response.success_count,
+                "failure_count": response.failure_count,
+            }, status=status.HTTP_200_OK)
+
+        except Exception as e:
+            logger.error(f"Error sending bulk notification: {e}")
+            return Response(
+                {"error": str(e)},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+
+
+class TopicNotificationView(APIView):
+    """
+    Send a notification to all subscribers of a topic.
+
+    POST /notification/notify/topic/
+    {
+        "topic": "news",
+        "title": "Breaking News",
+        "body": "Something happened"
+    }
+    """
+
+    def post(self, request):
+        serializer = TopicNotificationSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        topic_name = serializer.validated_data['topic']
+        title = serializer.validated_data['title']
+        body = serializer.validated_data['body']
+        data = serializer.validated_data.get('data', {})
+        image_url = serializer.validated_data.get('image_url', '')
+        firebase_project_id = serializer.validated_data.get('firebase_project_id')
+
+        firebase_project = None
+        if firebase_project_id:
+            firebase_project = get_object_or_404(
+                FirebaseProject, pk=firebase_project_id, is_active=True
+            )
+
+        try:
+            fcm = FCMService(firebase_project=firebase_project)
+            response_id = fcm.send_to_topic(
+                topic=topic_name,
+                title=title,
+                body=body,
+                data=data,
+                image_url=image_url,
+            )
+
+            notification = Notification.objects.create(
+                title=title,
+                body=body,
+                data_payload={**data, '_topic': topic_name},
+                status="sent",
+                sent_at=timezone.now(),
+            )
+
+            return Response({
+                "success": True,
+                "message": f"Notification sent to topic '{topic_name}'",
+                "notification_id": notification.pk,
+                "fcm_response": str(response_id),
+            }, status=status.HTTP_200_OK)
+
+        except Exception as e:
+            logger.error(f"Error sending topic notification: {e}")
+            return Response(
+                {"error": str(e)},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+
+
+# ============================================================
+# CRUD Views — Existing Models
+# ============================================================
 
 class ProfileListCreateView(generics.ListCreateAPIView):
     queryset = Profile.objects.all()
@@ -141,18 +376,53 @@ class UserTopicListCreateView(generics.ListCreateAPIView):
 class UserTopicRetrieveUpdateDestroyView(generics.RetrieveUpdateDestroyAPIView):
     queryset = UserTopic.objects.all()
     serializer_class = UserTopicSerializer
-    authentication_classes = [ApiClientAuthentication]   # 👈 here
-    permission_classes = [IsAuthenticated]               # 👈 requires valid client
+    authentication_classes = [ApiClientAuthentication]
+    permission_classes = [IsAuthenticated]
 
 
-# ------------------------------------
-# TO add public view just do as below
-# ------------------------------------
+# ============================================================
+# Configuration API — Firebase Projects, Templates, Webhooks
+# ============================================================
 
-# ------------------------------------
-# from rest_framework.permissions import AllowAny
+class FirebaseProjectListCreateView(generics.ListCreateAPIView):
+    serializer_class = FirebaseProjectSerializer
 
-# class PublicView(generics.ListAPIView):
-#     queryset = Something.objects.all()
-#     serializer_class = SomethingSerializer
-#     permission_classes = [AllowAny]   # No client auth required
+    def get_queryset(self):
+        # Only show Firebase projects belonging to the authenticated client
+        return FirebaseProject.objects.filter(api_client=self.request.user)
+
+
+class FirebaseProjectRetrieveUpdateDestroyView(generics.RetrieveUpdateDestroyAPIView):
+    serializer_class = FirebaseProjectSerializer
+
+    def get_queryset(self):
+        return FirebaseProject.objects.filter(api_client=self.request.user)
+
+
+class NotificationTemplateListCreateView(generics.ListCreateAPIView):
+    queryset = NotificationTemplate.objects.filter(is_active=True)
+    serializer_class = NotificationTemplateSerializer
+
+
+class NotificationTemplateRetrieveUpdateDestroyView(generics.RetrieveUpdateDestroyAPIView):
+    queryset = NotificationTemplate.objects.all()
+    serializer_class = NotificationTemplateSerializer
+
+
+class WebhookEndpointListCreateView(generics.ListCreateAPIView):
+    serializer_class = WebhookEndpointSerializer
+
+    def get_queryset(self):
+        return WebhookEndpoint.objects.filter(api_client=self.request.user)
+
+
+class WebhookEndpointRetrieveUpdateDestroyView(generics.RetrieveUpdateDestroyAPIView):
+    serializer_class = WebhookEndpointSerializer
+
+    def get_queryset(self):
+        return WebhookEndpoint.objects.filter(api_client=self.request.user)
+
+
+class NotificationAnalyticsListView(generics.ListAPIView):
+    queryset = NotificationAnalytics.objects.all().order_by('-date')
+    serializer_class = NotificationAnalyticsSerializer

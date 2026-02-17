@@ -124,6 +124,27 @@ class ApiClient(models.Model):
     
 
 
+# ------------------------------
+# Firebase Projects (multi-tenant)
+# ------------------------------
+class FirebaseProject(models.Model):
+    api_client = models.ForeignKey(ApiClient, on_delete=models.CASCADE, related_name="firebase_projects")
+    project_name = models.CharField(max_length=100)
+    credentials_json = models.JSONField()  # Store the full service account JSON
+    is_default = models.BooleanField(default=False)
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"{self.project_name} ({self.api_client.name})"
+
+    class Meta:
+        unique_together = ('api_client', 'project_name')
+
+
+# ------------------------------
+# Notification Templates
+# ------------------------------
 class NotificationTemplate(models.Model):
     name = models.CharField(max_length=100, unique=True)
     title_template = models.CharField(max_length=255)
@@ -135,8 +156,13 @@ class NotificationTemplate(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
+    def __str__(self):
+        return self.name
 
 
+# ------------------------------
+# Analytics
+# ------------------------------
 class NotificationAnalytics(models.Model):
     date = models.DateField()
     api_client = models.ForeignKey(ApiClient, on_delete=models.CASCADE, null=True)
@@ -151,8 +177,13 @@ class NotificationAnalytics(models.Model):
     class Meta:
         unique_together = ('date', 'api_client', 'topic', 'platform')
 
+    def __str__(self):
+        return f"Analytics {self.date} - {self.platform or 'all'}"
 
 
+# ------------------------------
+# Webhooks
+# ------------------------------
 class WebhookEndpoint(models.Model):
     EVENT_CHOICES = [
         ('notification.sent', 'Notification Sent'),
@@ -171,3 +202,6 @@ class WebhookEndpoint(models.Model):
     failure_count = models.IntegerField(default=0)
     last_triggered_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"Webhook {self.url} ({self.api_client.name})"

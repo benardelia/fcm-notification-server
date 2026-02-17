@@ -1,1 +1,8 @@
-/fcm_Keys/
+/fcm_keys/
+*.json
+!package.json
+.env
+*.pyc
+__pycache__/
+db.sqlite3
+/venv/
