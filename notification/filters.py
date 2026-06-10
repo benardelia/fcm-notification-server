@@ -8,10 +8,11 @@ from .models import (
 
 class ProfileFilter(django_filters.FilterSet):
     phone_number = django_filters.CharFilter(lookup_expr='icontains')
+    email = django_filters.CharFilter(lookup_expr='icontains')
 
     class Meta:
         model = Profile
-        fields = ['phone_number', 'is_active']
+        fields = ['phone_number', 'email', 'is_active']
 
 
 class DeviceFilter(django_filters.FilterSet):

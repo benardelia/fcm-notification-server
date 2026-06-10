@@ -1,4 +1,5 @@
 import logging
+import hashlib
 
 from django.shortcuts import get_object_or_404
 from rest_framework.views import APIView
@@ -6,9 +7,14 @@ from rest_framework.response import Response
 from rest_framework import generics, status
 from rest_framework.permissions import IsAuthenticated
 from django.utils import timezone
+from django.core.cache import cache
 from drf_spectacular.utils import extend_schema, extend_schema_view
 
 from notification.middleware import ApiClientAuthentication
+from notification.throttling import (
+    SendNotificationThrottle, BulkSendThrottle,
+    DeviceRegistrationThrottle, AnalyticsThrottle,
+)
 from .serializers import (
     ProfileSerializer, DeviceSerializer, NotificationSerializer,
     NotificationDeliveryLogSerializer, TopicSerializer, UserTopicSerializer,
@@ -32,6 +38,31 @@ from .services import FCMService, dispatch_webhook, render_notification_template
 
 logger = logging.getLogger(__name__)
 
+IDEMPOTENCY_CACHE_TIMEOUT = 86400  # 24 hours
+
+
+def _check_idempotency(request, prefix):
+    """
+    Check an Idempotency-Key header against the Redis cache.
+    Returns (cached_response_data, None) if key was seen before,
+    or (None, idempotency_key) if it's a new request.
+    """
+    idempotency_key = request.headers.get('Idempotency-Key')
+    if not idempotency_key:
+        return None, None
+
+    client_id = getattr(request.user, 'client_id', 'anon')
+    cache_key = f"idempotency:{prefix}:{client_id}:{idempotency_key}"
+    cached = cache.get(cache_key)
+    return cached, cache_key
+
+
+def _store_idempotency(cache_key, response_data):
+    """Store response data for an idempotency key."""
+    if cache_key:
+        cache.set(cache_key, response_data, IDEMPOTENCY_CACHE_TIMEOUT)
+
+
 
 # ============================================================
 # Notification Sending Views
@@ -45,18 +76,27 @@ class SendNotificationView(APIView):
     Automatically sends to **all active devices** registered under the profile.
     - 1 device: uses direct FCM send
     - 2+ devices: uses FCM multicast (single API call)
+
+    Supports `Idempotency-Key` header to safely retry without duplicate sends.
     """
+    throttle_classes = [SendNotificationThrottle]
 
     @extend_schema(
         request=SendNotificationSerializer,
         responses={200: dict},
-        summary="Send notification to a phone number",
+        summary="Send notification to a profile (by phone number or email)",
     )
     def post(self, request):
+        # Idempotency check
+        cached_response, cache_key = _check_idempotency(request, 'send')
+        if cached_response:
+            return Response(cached_response, status=status.HTTP_200_OK)
+
         serializer = SendNotificationSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
 
-        phone_number = serializer.validated_data['phone_number']
+        phone_number = serializer.validated_data.get('phone_number', '').strip()
+        email = serializer.validated_data.get('email', '').strip()
         title = serializer.validated_data['title']
         body = serializer.validated_data['body']
         data = serializer.validated_data.get('data', {})
@@ -64,7 +104,20 @@ class SendNotificationView(APIView):
         priority = serializer.validated_data.get('priority', 'high')
         firebase_project_id = serializer.validated_data.get('firebase_project_id')
 
-        profile = get_object_or_404(Profile, phone_number=phone_number)
+        # Look up profile by phone number or email
+        from django.db.models import Q
+        lookup = Q()
+        if phone_number:
+            lookup |= Q(phone_number=phone_number)
+        if email:
+            lookup |= Q(email=email)
+        profile = Profile.objects.filter(lookup).first()
+        if not profile:
+            return Response(
+                {"success": False, "error": {"code": "not_found",
+                 "message": "No profile found for the provided phone number or email."}},
+                status=status.HTTP_404_NOT_FOUND,
+            )
         devices = profile.devices.filter(is_active=True)
         if not devices.exists():
             return Response(
@@ -139,12 +192,14 @@ class SendNotificationView(APIView):
                     'devices_count': len(tokens),
                 }, api_client)
 
-            return Response({
+            response_data = {
                 "success": True,
                 "message": f"Notification sent to {len(tokens)} device(s)",
                 "notification_id": notification.pk,
                 "devices": results,
-            }, status=status.HTTP_200_OK)
+            }
+            _store_idempotency(cache_key, response_data)
+            return Response(response_data, status=status.HTTP_200_OK)
 
         except Exception as e:
             logger.error(f"Error sending notification: {e}")
@@ -157,22 +212,32 @@ class SendNotificationView(APIView):
 @extend_schema(tags=['Notifications'])
 class BulkSendNotificationView(APIView):
     """
-    Send a notification to multiple phone numbers at once.
+    Send a notification to multiple profiles at once.
 
-    Collects all active devices across the provided phone numbers
+    Accepts **phone_numbers**, **emails**, or both.
+    Collects all active devices across the resolved profiles
     and sends via FCM multicast (up to 500 tokens per call).
+
+    Supports `Idempotency-Key` header to safely retry without duplicate sends.
     """
+    throttle_classes = [BulkSendThrottle]
 
     @extend_schema(
         request=BulkSendNotificationSerializer,
         responses={200: dict},
-        summary="Bulk send notification to multiple phone numbers",
+        summary="Bulk send notification to multiple profiles (by phone number or email)",
     )
     def post(self, request):
+        # Idempotency check
+        cached_response, cache_key = _check_idempotency(request, 'bulk')
+        if cached_response:
+            return Response(cached_response, status=status.HTTP_200_OK)
+
         serializer = BulkSendNotificationSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
 
-        phone_numbers = serializer.validated_data['phone_numbers']
+        phone_numbers = serializer.validated_data.get('phone_numbers', [])
+        emails = serializer.validated_data.get('emails', [])
         title = serializer.validated_data['title']
         body = serializer.validated_data['body']
         data = serializer.validated_data.get('data', {})
@@ -180,8 +245,15 @@ class BulkSendNotificationView(APIView):
         priority = serializer.validated_data.get('priority', 'high')
         firebase_project_id = serializer.validated_data.get('firebase_project_id')
 
+        from django.db.models import Q
+        lookup = Q()
+        if phone_numbers:
+            lookup |= Q(profile__phone_number__in=phone_numbers)
+        if emails:
+            lookup |= Q(profile__email__in=emails)
+
         devices = Device.objects.filter(
-            profile__phone_number__in=phone_numbers,
+            lookup,
             is_active=True,
         ).select_related('profile')
 
@@ -226,14 +298,16 @@ class BulkSendNotificationView(APIView):
                 ))
             NotificationDeliveryLog.objects.bulk_create(logs)
 
-            return Response({
+            response_data = {
                 "success": True,
                 "message": "Bulk notification sent",
                 "notification_id": notification.pk,
                 "total_devices": len(tokens),
                 "success_count": response.success_count,
                 "failure_count": response.failure_count,
-            }, status=status.HTTP_200_OK)
+            }
+            _store_idempotency(cache_key, response_data)
+            return Response(response_data, status=status.HTTP_200_OK)
 
         except Exception as e:
             logger.error(f"Error sending bulk notification: {e}")
@@ -484,6 +558,7 @@ class DeviceListCreateView(generics.ListCreateAPIView):
     search_fields = ['push_token', 'profile__phone_number']
     ordering_fields = ['id', 'last_seen', 'device_type']
     ordering = ['-last_seen']
+    throttle_classes = [DeviceRegistrationThrottle]
 
 
 @extend_schema_view(
@@ -687,6 +762,7 @@ class NotificationAnalyticsListView(generics.ListAPIView):
     filterset_class = AnalyticsFilter
     ordering_fields = ['date', 'total_sent', 'total_delivered', 'total_failed']
     ordering = ['-date']
+    throttle_classes = [AnalyticsThrottle]
 
 
 # ============================================================

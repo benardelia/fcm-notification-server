@@ -47,20 +47,42 @@ class UserTopicSerializer(serializers.ModelSerializer):
 # Send Notification Serializers
 # ------------------------------
 class SendNotificationSerializer(serializers.Serializer):
-    phone_number = serializers.CharField()
+    # Target — at least one of phone_number or email is required
+    phone_number = serializers.CharField(required=False, allow_blank=True, default='',
+                                         help_text="Target phone number (required if email not provided)")
+    email = serializers.EmailField(required=False, allow_blank=True, default='',
+                                   help_text="Target email address (required if phone_number not provided)")
     title = serializers.CharField(max_length=255)
     body = serializers.CharField()
     data = serializers.JSONField(required=False, default=dict)
     image_url = serializers.URLField(required=False, allow_blank=True, default='')
     priority = serializers.ChoiceField(choices=['high', 'normal'], default='high')
-    firebase_project_id = serializers.IntegerField(required=False, help_text="Optional: use a specific Firebase project for multi-tenant sending")
+    firebase_project_id = serializers.IntegerField(required=False,
+                                                   help_text="Optional: use a specific Firebase project for multi-tenant sending")
+
+    def validate(self, attrs):
+        if not attrs.get('phone_number') and not attrs.get('email'):
+            raise serializers.ValidationError(
+                "At least one of 'phone_number' or 'email' must be provided."
+            )
+        return attrs
 
 
 class BulkSendNotificationSerializer(serializers.Serializer):
+    # Target — supply phone_numbers, emails, or both
     phone_numbers = serializers.ListField(
         child=serializers.CharField(),
-        min_length=1,
+        required=False,
+        default=list,
         max_length=500,
+        help_text="List of target phone numbers",
+    )
+    emails = serializers.ListField(
+        child=serializers.EmailField(),
+        required=False,
+        default=list,
+        max_length=500,
+        help_text="List of target email addresses",
     )
     title = serializers.CharField(max_length=255)
     body = serializers.CharField()
@@ -68,6 +90,13 @@ class BulkSendNotificationSerializer(serializers.Serializer):
     image_url = serializers.URLField(required=False, allow_blank=True, default='')
     priority = serializers.ChoiceField(choices=['high', 'normal'], default='high')
     firebase_project_id = serializers.IntegerField(required=False)
+
+    def validate(self, attrs):
+        if not attrs.get('phone_numbers') and not attrs.get('emails'):
+            raise serializers.ValidationError(
+                "At least one of 'phone_numbers' or 'emails' must be provided."
+            )
+        return attrs
 
 
 class TopicNotificationSerializer(serializers.Serializer):
@@ -131,12 +160,23 @@ class TemplateSendSerializer(serializers.Serializer):
     """Send a notification using a pre-defined template with variable substitution."""
     template_name = serializers.CharField(max_length=100, help_text="Name of the NotificationTemplate to use")
     variables = serializers.JSONField(required=False, default=dict, help_text="Variables to substitute into the template: {\"name\": \"John\"}")
-    phone_number = serializers.CharField(help_text="Target phone number")
+    # Target — at least one required
+    phone_number = serializers.CharField(required=False, allow_blank=True, default='',
+                                         help_text="Target phone number")
+    email = serializers.EmailField(required=False, allow_blank=True, default='',
+                                   help_text="Target email address")
     data = serializers.JSONField(required=False, default=dict)
     priority = serializers.ChoiceField(choices=['high', 'normal'], default='high')
     is_silent = serializers.BooleanField(default=False)
     click_action = serializers.URLField(required=False, allow_blank=True, default='')
     firebase_project_id = serializers.IntegerField(required=False)
+
+    def validate(self, attrs):
+        if not attrs.get('phone_number') and not attrs.get('email'):
+            raise serializers.ValidationError(
+                "At least one of 'phone_number' or 'email' must be provided."
+            )
+        return attrs
 
 
 class TemplateBulkSendSerializer(serializers.Serializer):

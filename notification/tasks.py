@@ -396,3 +396,61 @@ def process_scheduled_notifications():
 
     logger.info(f"Processed {processed} scheduled notifications")
     return {'processed': processed}
+
+
+@shared_task
+def aggregate_daily_analytics():
+    """
+    Periodic task: aggregate yesterday's delivery logs into NotificationAnalytics.
+    Run once a day via Celery Beat (add to CELERY_BEAT_SCHEDULE).
+
+    Counts sent/delivered/read/failed per (api_client, platform, date) tuple.
+    """
+    from django.db.models import Count, Q, Avg, F
+    from notification.models import NotificationDeliveryLog, NotificationAnalytics, ApiClient
+
+    from datetime import date, timedelta
+    yesterday = date.today() - timedelta(days=1)
+
+    # Aggregate by platform across all clients
+    logs = NotificationDeliveryLog.objects.filter(
+        delivered_at__date=yesterday,
+    ).select_related('device', 'notification')
+
+    # Group by device platform
+    platform_stats = {}
+    for log in logs:
+        platform = log.device.device_type if log.device else ''
+        key = platform
+        if key not in platform_stats:
+            platform_stats[key] = {'sent': 0, 'delivered': 0, 'read': 0, 'failed': 0}
+
+        if log.status == 'sent':
+            platform_stats[key]['sent'] += 1
+            platform_stats[key]['delivered'] += 1
+        elif log.status == 'read':
+            platform_stats[key]['sent'] += 1
+            platform_stats[key]['delivered'] += 1
+            platform_stats[key]['read'] += 1
+        elif log.status == 'failed':
+            platform_stats[key]['sent'] += 1
+            platform_stats[key]['failed'] += 1
+
+    created = 0
+    for platform, stats in platform_stats.items():
+        obj, _ = NotificationAnalytics.objects.update_or_create(
+            date=yesterday,
+            api_client=None,
+            topic=None,
+            platform=platform,
+            defaults={
+                'total_sent': stats['sent'],
+                'total_delivered': stats['delivered'],
+                'total_read': stats['read'],
+                'total_failed': stats['failed'],
+            },
+        )
+        created += 1
+
+    logger.info(f"Daily analytics aggregated for {yesterday}: {created} platform buckets")
+    return {'date': str(yesterday), 'buckets': created}

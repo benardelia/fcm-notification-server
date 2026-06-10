@@ -10,11 +10,17 @@ from django.contrib.auth.models import User
 # you can extend it via OneToOne relation.
 class Profile(models.Model):
     # user = models.OneToOneField(User, on_delete=models.CASCADE, related_name="profile")
-    phone_number = models.CharField(max_length=20, blank=True, null=True)
+    phone_number = models.CharField(max_length=20, blank=True, null=True, unique=True)
+    email = models.EmailField(blank=True, null=True, unique=True)
     is_active = models.BooleanField(default=True)
 
     def __str__(self):
-        return self.phone_number
+        return self.phone_number or self.email or f'Profile #{self.pk}'
+
+    def clean(self):
+        from django.core.exceptions import ValidationError
+        if not self.phone_number and not self.email:
+            raise ValidationError('A profile must have at least a phone number or an email address.')
 
 
 # ------------------------------
@@ -177,6 +183,13 @@ class UserTopic(models.Model):
 
 
 class ApiClient(models.Model):
+    SCOPE_CHOICES = [
+        ('send', 'Send Notifications'),
+        ('read', 'Read Data'),
+        ('manage', 'Manage Devices & Profiles'),
+        ('admin', 'Full Admin Access'),
+    ]
+
     name = models.CharField(max_length=100, unique=True)   # e.g. "Mobile App", "Web Dashboard"
     client_id = models.UUIDField(default=uuid.uuid4, editable=False, unique=True)
     auth_token = models.CharField(max_length=255, unique=True)  # pre-generated token
@@ -184,14 +197,46 @@ class ApiClient(models.Model):
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
+    # Token expiry -- null means never expires
+    expires_at = models.DateTimeField(null=True, blank=True)
+
+    # Permission scopes -- list of allowed scope strings, e.g. ["send", "read"]
+    scopes = models.JSONField(default=list, blank=True)
+
+    # IP whitelisting -- empty list means all IPs are allowed
+    allowed_ips = models.JSONField(
+        default=list, blank=True,
+        help_text="List of allowed IP addresses. Empty = all IPs allowed."
+    )
+
     def __str__(self):
         return f"{self.name} ID: ({self.client_id}) token: {self.auth_token}"
-    
+
     @property
     def is_authenticated(self):
         """DRF expects this attribute on the user object."""
         return True
-    
+
+    def is_token_valid(self):
+        """Return True if the token has not expired."""
+        if self.expires_at is None:
+            return True
+        from django.utils import timezone
+        return timezone.now() < self.expires_at
+
+    def has_scope(self, scope):
+        """Check if the client has a specific permission scope."""
+        if not self.scopes:
+            return True  # No scopes set = unrestricted (backward compatible)
+        return scope in self.scopes or 'admin' in self.scopes
+
+    def is_ip_allowed(self, ip_address):
+        """Check if the requesting IP is whitelisted."""
+        if not self.allowed_ips:
+            return True  # Empty = all IPs allowed
+        return ip_address in self.allowed_ips
+
+
 
 
 # ------------------------------

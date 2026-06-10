@@ -25,4 +25,7 @@ urlpatterns = [
     # Auth & Health
     path('api-auth/', include('rest_framework.urls')),
     path('health/', HealthCheckView.as_view(), name='health-check'),
+
+    # Prometheus metrics scrape endpoint (/metrics/)
+    path('', include('django_prometheus.urls')),
 ]

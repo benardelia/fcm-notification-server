@@ -53,17 +53,26 @@ INSTALLED_APPS = [
     'django_filters',
     'drf_spectacular',
     'django_celery_results',
+    'django_celery_beat',
+    'corsheaders',
+    'django_structlog',
+    'django_prometheus',
     'notification',
 ]
 
 MIDDLEWARE = [
+    'django_prometheus.middleware.PrometheusBeforeMiddleware',
     'django.middleware.security.SecurityMiddleware',
+    'whitenoise.middleware.WhiteNoiseMiddleware',
+    'corsheaders.middleware.CorsMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
+    'django_structlog.middlewares.RequestMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
+    'django_prometheus.middleware.PrometheusAfterMiddleware',
 ]
 
 ROOT_URLCONF = 'fcm_server.urls'
@@ -129,6 +138,8 @@ USE_TZ = True
 # https://docs.djangoproject.com/en/5.2/howto/static-files/
 
 STATIC_URL = 'static/'
+STATIC_ROOT = BASE_DIR / 'staticfiles'
+STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
 
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.2/ref/settings/#default-auto-field
@@ -154,6 +165,10 @@ CELERY_BEAT_SCHEDULE = {
     },
     'cleanup-stale-tokens': {
         'task': 'notification.tasks.cleanup_stale_tokens',
+        'schedule': 86400.0,  # Every 24 hours
+    },
+    'aggregate-daily-analytics': {
+        'task': 'notification.tasks.aggregate_daily_analytics',
         'schedule': 86400.0,  # Every 24 hours
     },
 }
@@ -193,6 +208,18 @@ REST_FRAMEWORK = {
 
     # Consistent error responses
     'EXCEPTION_HANDLER': 'notification.exceptions.custom_exception_handler',
+
+    # Rate limiting
+    'DEFAULT_THROTTLE_CLASSES': [
+        'notification.throttling.ApiClientRateThrottle',
+    ],
+    'DEFAULT_THROTTLE_RATES': {
+        'api_client': '200/minute',
+        'send_notification': '100/minute',
+        'bulk_send': '10/minute',
+        'device_registration': '50/minute',
+        'analytics': '30/minute',
+    },
 }
 
 
@@ -219,3 +246,97 @@ SPECTACULAR_SETTINGS = {
 
     'COMPONENT_SPLIT_REQUEST': True,
 }
+
+# ---------------------------------------------------------------------------
+# CORS
+# ---------------------------------------------------------------------------
+# In development, allow localhost. In production set CORS_ALLOWED_ORIGINS in .env.
+CORS_ALLOWED_ORIGINS = env.list(
+    'CORS_ALLOWED_ORIGINS',
+    default=[
+        'http://localhost:3000',
+        'http://localhost:8000',
+        'http://127.0.0.1:3000',
+        'http://127.0.0.1:8000',
+    ],
+)
+CORS_ALLOW_CREDENTIALS = True
+
+
+# ---------------------------------------------------------------------------
+# Structured Logging (django-structlog -> JSON logs in production)
+# ---------------------------------------------------------------------------
+import structlog
+
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'formatters': {
+        'json_formatter': {
+            '()': structlog.stdlib.ProcessorFormatter,
+            'processor': structlog.processors.JSONRenderer(),
+        },
+        'plain_console': {
+            '()': structlog.stdlib.ProcessorFormatter,
+            'processor': structlog.dev.ConsoleRenderer(),
+        },
+    },
+    'handlers': {
+        'console': {
+            'class': 'logging.StreamHandler',
+            'formatter': 'plain_console' if DEBUG else 'json_formatter',
+        },
+    },
+    'root': {
+        'handlers': ['console'],
+        'level': 'INFO',
+    },
+    'loggers': {
+        'django': {
+            'handlers': ['console'],
+            'level': 'INFO',
+            'propagate': False,
+        },
+        'notification': {
+            'handlers': ['console'],
+            'level': 'DEBUG' if DEBUG else 'INFO',
+            'propagate': False,
+        },
+    },
+}
+
+structlog.configure(
+    processors=[
+        structlog.contextvars.merge_contextvars,
+        structlog.stdlib.filter_by_level,
+        structlog.processors.TimeStamper(fmt='iso'),
+        structlog.stdlib.add_logger_name,
+        structlog.stdlib.add_log_level,
+        structlog.stdlib.PositionalArgumentsFormatter(),
+        structlog.processors.StackInfoRenderer(),
+        structlog.processors.format_exc_info,
+        structlog.processors.UnicodeDecoder(),
+        structlog.stdlib.ProcessorFormatter.wrap_for_formatter,
+    ],
+    context_class=dict,
+    logger_factory=structlog.stdlib.LoggerFactory(),
+    wrapper_class=structlog.stdlib.BoundLogger,
+    cache_logger_on_first_use=True,
+)
+
+
+# ---------------------------------------------------------------------------
+# Sentry (error tracking -- only active when SENTRY_DSN is set)
+# ---------------------------------------------------------------------------
+_sentry_dsn = env('SENTRY_DSN', default='')
+if _sentry_dsn:
+    import sentry_sdk
+    from sentry_sdk.integrations.django import DjangoIntegration
+    from sentry_sdk.integrations.celery import CeleryIntegration
+
+    sentry_sdk.init(
+        dsn=_sentry_dsn,
+        integrations=[DjangoIntegration(), CeleryIntegration()],
+        traces_sample_rate=0.1,
+        send_default_pii=False,
+    )
