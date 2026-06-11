@@ -63,6 +63,25 @@ def _store_idempotency(cache_key, response_data):
         cache.set(cache_key, response_data, IDEMPOTENCY_CACHE_TIMEOUT)
 
 
+def _get_firebase_project(request, firebase_project_id=None):
+    """
+    Resolve the Firebase Project to use for sending notifications.
+    Priority:
+    1. Explicit firebase_project_id provided in the request
+    2. The default FirebaseProject linked to the authenticated ApiClient
+    3. None (falls back to default .env configuration)
+    """
+    if firebase_project_id:
+        return get_object_or_404(FirebaseProject, pk=firebase_project_id, is_active=True)
+
+    api_client = getattr(request, 'user', None)
+    if api_client and hasattr(api_client, 'firebase_projects'):
+        # Try to find the default project for this API client
+        return api_client.firebase_projects.filter(is_default=True, is_active=True).first()
+
+    return None
+
+
 
 # ============================================================
 # Notification Sending Views
@@ -126,11 +145,7 @@ class SendNotificationView(APIView):
             )
 
         # Resolve Firebase project (multi-tenant or default)
-        firebase_project = None
-        if firebase_project_id:
-            firebase_project = get_object_or_404(
-                FirebaseProject, pk=firebase_project_id, is_active=True
-            )
+        firebase_project = _get_firebase_project(request, firebase_project_id)
 
         try:
             fcm = FCMService(firebase_project=firebase_project)
@@ -265,11 +280,7 @@ class BulkSendNotificationView(APIView):
 
         tokens = [d.push_token for d in devices]
 
-        firebase_project = None
-        if firebase_project_id:
-            firebase_project = get_object_or_404(
-                FirebaseProject, pk=firebase_project_id, is_active=True
-            )
+        firebase_project = _get_firebase_project(request, firebase_project_id)
 
         try:
             fcm = FCMService(firebase_project=firebase_project)
@@ -339,11 +350,7 @@ class TopicNotificationView(APIView):
         image_url = serializer.validated_data.get('image_url', '')
         firebase_project_id = serializer.validated_data.get('firebase_project_id')
 
-        firebase_project = None
-        if firebase_project_id:
-            firebase_project = get_object_or_404(
-                FirebaseProject, pk=firebase_project_id, is_active=True
-            )
+        firebase_project = _get_firebase_project(request, firebase_project_id)
 
         try:
             fcm = FCMService(firebase_project=firebase_project)
@@ -414,9 +421,7 @@ class TemplateSendView(APIView):
         # Merge rendered data with extra data
         merged_data = {**rendered.get('data', {}), **extra_data}
 
-        firebase_project = None
-        if firebase_project_id:
-            firebase_project = get_object_or_404(FirebaseProject, pk=firebase_project_id, is_active=True)
+        firebase_project = _get_firebase_project(request, firebase_project_id)
 
         try:
             fcm = FCMService(firebase_project=firebase_project)
