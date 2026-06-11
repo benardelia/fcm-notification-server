@@ -144,7 +144,7 @@ def webpush_message():
     return message
 
 
-def all_platforms_message(registration_token: str, title: str = '', body: str = '', data: dict = None):
+def all_platforms_message(registration_token: str, title: str = '', body: str = '', data: dict | None = None):
     # [START multi_platforms_message]
     message = messaging.Message(
         notification=messaging.Notification(
@@ -237,7 +237,7 @@ def send_all():
     # [END send_all]
 
 
-def send_multicast(tokens : list, title: str = '', body: str = '', data: dict = None):
+def send_multicast(tokens : list, title: str = '', body: str = '', data: dict | None = None):
     # [START send_multicast]
     # Create a list containing up to 500 registration tokens.
     # These registration tokens come from the client FCM SDKs.

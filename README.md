@@ -49,6 +49,26 @@ Use a data payload (JSON) to navigate users inside the app.
     celery -A fcm_server worker -l info
 
 
+## To run using Docker (e.g., for local testing or server deployment):
+
+Make sure Docker and Docker Compose are installed on your machine/server. Then run:
+
+```bash
+docker compose up --build -d
+```
+
+This command will automatically:
+1. Build the necessary Docker images.
+2. Apply database migrations.
+3. Start the PostgreSQL, Redis, Celery worker, and Celery beat services.
+4. Start the Django web server on port `8000` (accessible at `http://localhost:8000`).
+
+**Useful Docker Commands:**
+- Stop the containers: `docker compose down`
+- View background logs: `docker compose logs -f`
+- Access Django shell inside the container: `docker compose exec web python manage.py shell`
+
+
 ## SDK Usage from Other Projects
 
     from sdk import FCMClient
