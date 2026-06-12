@@ -3,7 +3,7 @@ from .views import (
     SendNotificationView, BulkSendNotificationView, TopicNotificationView,
     TemplateSendView,
     ProfileListCreateView, ProfileRetrieveUpdateDestroyView,
-    DeviceListCreateView, DeviceRetrieveUpdateDestroyView,
+    DeviceListCreateView, DeviceRetrieveUpdateDestroyView, RegisterDeviceView,
     NotificationListCreateView, NotificationRetrieveUpdateDestroyView,
     NotificationDeliveryLogListCreateView, NotificationDeliveryLogRetrieveUpdateDestroyView,
     TopicListCreateView, TopicRetrieveUpdateDestroyView,
@@ -31,6 +31,7 @@ urlpatterns = [
     path('profile/<int:pk>/', ProfileRetrieveUpdateDestroyView.as_view(), name='profile-detail'),
 
     # --- Devices ---
+    path('device/register/', RegisterDeviceView.as_view(), name='device-register-unified'),
     path('device/', DeviceListCreateView.as_view(), name='device-list-create'),
     path('device/<int:pk>/', DeviceRetrieveUpdateDestroyView.as_view(), name='device-detail'),
 

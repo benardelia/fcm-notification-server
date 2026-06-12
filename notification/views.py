@@ -23,6 +23,7 @@ from .serializers import (
     NotificationTemplateSerializer, NotificationAnalyticsSerializer,
     WebhookEndpointSerializer, ScheduledNotificationSerializer,
     TemplateSendSerializer, TemplateBulkSendSerializer,
+    RegisterDeviceSerializer,
 )
 from .models import (
     Profile, Device, Notification, NotificationDeliveryLog,
@@ -564,6 +565,74 @@ class DeviceListCreateView(generics.ListCreateAPIView):
     ordering_fields = ['id', 'last_seen', 'device_type']
     ordering = ['-last_seen']
     throttle_classes = [DeviceRegistrationThrottle]
+
+
+@extend_schema(tags=['Devices'])
+class RegisterDeviceView(APIView):
+    """
+    Register a device and its associated profile in a single request.
+    If the profile already exists (by phone or email), it updates it.
+    If the device already exists (by push token), it updates it and links it to the profile.
+    """
+    throttle_classes = [DeviceRegistrationThrottle]
+
+    @extend_schema(
+        request=RegisterDeviceSerializer,
+        responses={200: DeviceSerializer, 201: DeviceSerializer},
+        summary="Register profile and device in one go",
+    )
+    def post(self, request):
+        serializer = RegisterDeviceSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        phone_number = serializer.validated_data.get('phone_number', '').strip()
+        email = serializer.validated_data.get('email', '').strip()
+        device_type = serializer.validated_data['device_type']
+        push_token = serializer.validated_data['push_token']
+        app_version = serializer.validated_data.get('app_version', '')
+
+        # 1. Find or create profile
+        from django.db.models import Q
+        lookup = Q()
+        if phone_number:
+            lookup |= Q(phone_number=phone_number)
+        if email:
+            lookup |= Q(email=email)
+            
+        profile = Profile.objects.filter(lookup).first()
+        
+        if profile:
+            # Update missing fields if needed
+            changed = False
+            if phone_number and not profile.phone_number:
+                profile.phone_number = phone_number
+                changed = True
+            if email and not profile.email:
+                profile.email = email
+                changed = True
+            if changed:
+                profile.save()
+        else:
+            # Create new profile
+            profile = Profile.objects.create(
+                phone_number=phone_number if phone_number else None,
+                email=email if email else None,
+            )
+
+        # 2. Update or create device
+        device, created = Device.objects.update_or_create(
+            push_token=push_token,
+            defaults={
+                'profile': profile,
+                'device_type': device_type,
+                'app_version': app_version,
+                'is_active': True,
+                'last_seen': timezone.now()
+            }
+        )
+
+        status_code = status.HTTP_201_CREATED if created else status.HTTP_200_OK
+        return Response(DeviceSerializer(device).data, status=status_code)
 
 
 @extend_schema_view(

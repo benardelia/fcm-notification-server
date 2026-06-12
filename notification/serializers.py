@@ -19,6 +19,19 @@ class DeviceSerializer(serializers.ModelSerializer):
         fields = '__all__'
         
 
+class RegisterDeviceSerializer(serializers.Serializer):
+    phone_number = serializers.CharField(required=False, allow_blank=True, default='')
+    email = serializers.EmailField(required=False, allow_blank=True, default='')
+    device_type = serializers.ChoiceField(choices=Device.DEVICE_TYPES)
+    push_token = serializers.CharField(max_length=512)
+    app_version = serializers.CharField(max_length=50, required=False, allow_blank=True, default='')
+
+    def validate(self, attrs):
+        if not attrs.get('phone_number') and not attrs.get('email'):
+            raise serializers.ValidationError("At least one of 'phone_number' or 'email' must be provided.")
+        return attrs
+
+
 class NotificationSerializer(serializers.ModelSerializer):
     class Meta:
         model = Notification
