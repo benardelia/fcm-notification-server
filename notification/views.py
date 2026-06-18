@@ -574,6 +574,8 @@ class RegisterDeviceView(APIView):
     If the profile already exists (by phone or email), it updates it.
     If the device already exists (by push token), it updates it and links it to the profile.
     """
+    authentication_classes = [ApiClientAuthentication]
+    permission_classes = [IsAuthenticated]
     throttle_classes = [DeviceRegistrationThrottle]
 
     @extend_schema(
