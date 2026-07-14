@@ -1,5 +1,5 @@
-import re
 import logging
+import re
 
 logger = logging.getLogger(__name__)
 
@@ -19,6 +19,7 @@ def render_template(template_string, variables):
 
     Unresolved variables are left as-is: "Hello {{unknown}}" => "Hello {{unknown}}"
     """
+
     def replacer(match):
         key = match.group(1).strip()
         value = variables.get(key)
@@ -27,7 +28,7 @@ def render_template(template_string, variables):
         logger.warning(f"Template variable '{key}' not found in provided variables")
         return match.group(0)  # Leave unresolved
 
-    return re.sub(r'\{\{(\s*\w+\s*)\}\}', replacer, template_string)
+    return re.sub(r"\{\{(\s*\w+\s*)\}\}", replacer, template_string)
 
 
 def render_notification_template(template, variables=None):
@@ -54,8 +55,8 @@ def render_notification_template(template, variables=None):
             data[key] = render_template(value, vars_dict)
 
     return {
-        'title': title,
-        'body': body,
-        'data': data,
-        'platform_overrides': template.platform_overrides,
+        "title": title,
+        "body": body,
+        "data": data,
+        "platform_overrides": template.platform_overrides,
     }

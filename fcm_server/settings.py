@@ -10,8 +10,10 @@ For the full list of settings and their values, see
 https://docs.djangoproject.com/en/5.2/ref/settings/
 """
 
-import environ
+import structlog
 from pathlib import Path
+
+import environ
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -20,86 +22,88 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 env = environ.Env(
     DEBUG=(bool, False),
     ALLOWED_HOSTS=(list, []),
-    FIREBASE_CREDENTIALS_PATH=(str, ''),
-    REDIS_URL=(str, 'redis://localhost:6379/0'),
-    CELERY_BROKER_URL=(str, 'redis://localhost:6379/0'),
-    CELERY_RESULT_BACKEND=(str, 'redis://localhost:6379/1'),
+    FIREBASE_CREDENTIALS_PATH=(str, ""),
+    REDIS_URL=(str, "redis://localhost:6379/0"),
+    CELERY_BROKER_URL=(str, "redis://localhost:6379/0"),
+    CELERY_RESULT_BACKEND=(str, "redis://localhost:6379/1"),
 )
-environ.Env.read_env(BASE_DIR / '.env')
+environ.Env.read_env(BASE_DIR / ".env")
 
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/5.2/howto/deployment/checklist/
 
-SECRET_KEY = env('SECRET_KEY')
+SECRET_KEY = env("SECRET_KEY")
 
-DEBUG = env('DEBUG')
+DEBUG = env("DEBUG")
 
-ALLOWED_HOSTS = env('ALLOWED_HOSTS')
+ALLOWED_HOSTS = env("ALLOWED_HOSTS")
 
 # Firebase configuration — path to the service account JSON file
-FIREBASE_CREDENTIALS_PATH = env('FIREBASE_CREDENTIALS_PATH')
+FIREBASE_CREDENTIALS_PATH = env("FIREBASE_CREDENTIALS_PATH")
 
 
 # Application definition
 
 INSTALLED_APPS = [
-    'django.contrib.admin',
-    'django.contrib.auth',
-    'django.contrib.contenttypes',
-    'django.contrib.sessions',
-    'django.contrib.messages',
-    'django.contrib.staticfiles',
-    'rest_framework',
-    'django_filters',
-    'drf_spectacular',
-    'django_celery_results',
-    'django_celery_beat',
-    'corsheaders',
-    'django_structlog',
-    'django_prometheus',
-    'notification',
+    "django.contrib.admin",
+    "django.contrib.auth",
+    "django.contrib.contenttypes",
+    "django.contrib.sessions",
+    "django.contrib.messages",
+    "django.contrib.staticfiles",
+    "rest_framework",
+    "django_filters",
+    "drf_spectacular",
+    "django_celery_results",
+    "django_celery_beat",
+    "corsheaders",
+    "django_structlog",
+    "django_prometheus",
+    "notification",
 ]
 
 MIDDLEWARE = [
-    'django_prometheus.middleware.PrometheusBeforeMiddleware',
-    'django.middleware.security.SecurityMiddleware',
-    'whitenoise.middleware.WhiteNoiseMiddleware',
-    'corsheaders.middleware.CorsMiddleware',
-    'django.contrib.sessions.middleware.SessionMiddleware',
-    'django.middleware.common.CommonMiddleware',
-    'django.middleware.csrf.CsrfViewMiddleware',
-    'django.contrib.auth.middleware.AuthenticationMiddleware',
-    'django_structlog.middlewares.RequestMiddleware',
-    'django.contrib.messages.middleware.MessageMiddleware',
-    'django.middleware.clickjacking.XFrameOptionsMiddleware',
-    'django_prometheus.middleware.PrometheusAfterMiddleware',
+    "django_prometheus.middleware.PrometheusBeforeMiddleware",
+    "django.middleware.security.SecurityMiddleware",
+    "whitenoise.middleware.WhiteNoiseMiddleware",
+    "corsheaders.middleware.CorsMiddleware",
+    "django.contrib.sessions.middleware.SessionMiddleware",
+    "django.middleware.common.CommonMiddleware",
+    "django.middleware.csrf.CsrfViewMiddleware",
+    "django.contrib.auth.middleware.AuthenticationMiddleware",
+    "django_structlog.middlewares.RequestMiddleware",
+    "django.contrib.messages.middleware.MessageMiddleware",
+    "django.middleware.clickjacking.XFrameOptionsMiddleware",
+    "django_prometheus.middleware.PrometheusAfterMiddleware",
 ]
 
-ROOT_URLCONF = 'fcm_server.urls'
+ROOT_URLCONF = "fcm_server.urls"
 
 TEMPLATES = [
     {
-        'BACKEND': 'django.template.backends.django.DjangoTemplates',
-        'DIRS': [],
-        'APP_DIRS': True,
-        'OPTIONS': {
-            'context_processors': [
-                'django.template.context_processors.request',
-                'django.contrib.auth.context_processors.auth',
-                'django.contrib.messages.context_processors.messages',
+        "BACKEND": "django.template.backends.django.DjangoTemplates",
+        "DIRS": [],
+        "APP_DIRS": True,
+        "OPTIONS": {
+            "context_processors": [
+                "django.template.context_processors.request",
+                "django.contrib.auth.context_processors.auth",
+                "django.contrib.messages.context_processors.messages",
             ],
         },
     },
 ]
 
-WSGI_APPLICATION = 'fcm_server.wsgi.application'
+WSGI_APPLICATION = "fcm_server.wsgi.application"
 
 
 # Database
 # https://docs.djangoproject.com/en/5.2/ref/settings/#databases
 
 DATABASES = {
-    'default': env.db('DATABASE_URL', default='sqlite:///' + str(BASE_DIR / 'db.sqlite3'))
+    "default": env.db(
+        "DATABASE_URL", default="sqlite:///" + str(BASE_DIR / "db.sqlite3")
+    )
 }
 
 
@@ -108,16 +112,16 @@ DATABASES = {
 
 AUTH_PASSWORD_VALIDATORS = [
     {
-        'NAME': 'django.contrib.auth.password_validation.UserAttributeSimilarityValidator',
+        "NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator",
     },
     {
-        'NAME': 'django.contrib.auth.password_validation.MinimumLengthValidator',
+        "NAME": "django.contrib.auth.password_validation.MinimumLengthValidator",
     },
     {
-        'NAME': 'django.contrib.auth.password_validation.CommonPasswordValidator',
+        "NAME": "django.contrib.auth.password_validation.CommonPasswordValidator",
     },
     {
-        'NAME': 'django.contrib.auth.password_validation.NumericPasswordValidator',
+        "NAME": "django.contrib.auth.password_validation.NumericPasswordValidator",
     },
 ]
 
@@ -125,9 +129,9 @@ AUTH_PASSWORD_VALIDATORS = [
 # Internationalization
 # https://docs.djangoproject.com/en/5.2/topics/i18n/
 
-LANGUAGE_CODE = 'en-us'
+LANGUAGE_CODE = "en-us"
 
-TIME_ZONE = 'UTC'
+TIME_ZONE = "UTC"
 
 USE_I18N = True
 
@@ -137,114 +141,110 @@ USE_TZ = True
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/5.2/howto/static-files/
 
-STATIC_URL = 'static/'
-STATIC_ROOT = BASE_DIR / 'staticfiles'
-STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
+STATIC_URL = "static/"
+STATIC_ROOT = BASE_DIR / "staticfiles"
+STATICFILES_STORAGE = "whitenoise.storage.CompressedManifestStaticFilesStorage"
 
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.2/ref/settings/#default-auto-field
 
-DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
+DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 
 # Celery Configuration
-CELERY_BROKER_URL = env('CELERY_BROKER_URL')
-CELERY_RESULT_BACKEND = 'django-db'
-CELERY_ACCEPT_CONTENT = ['json']
-CELERY_TASK_SERIALIZER = 'json'
-CELERY_RESULT_SERIALIZER = 'json'
+CELERY_BROKER_URL = env("CELERY_BROKER_URL")
+CELERY_RESULT_BACKEND = "django-db"
+CELERY_ACCEPT_CONTENT = ["json"]
+CELERY_TASK_SERIALIZER = "json"
+CELERY_RESULT_SERIALIZER = "json"
 CELERY_TIMEZONE = TIME_ZONE
 CELERY_TASK_TRACK_STARTED = True
 CELERY_BROKER_CONNECTION_RETRY_ON_STARTUP = True
 
 # Celery Beat schedule for periodic tasks
 CELERY_BEAT_SCHEDULE = {
-    'process-scheduled-notifications': {
-        'task': 'notification.tasks.process_scheduled_notifications',
-        'schedule': 60.0,  # Every 60 seconds
+    "process-scheduled-notifications": {
+        "task": "notification.tasks.process_scheduled_notifications",
+        "schedule": 60.0,  # Every 60 seconds
     },
-    'cleanup-stale-tokens': {
-        'task': 'notification.tasks.cleanup_stale_tokens',
-        'schedule': 86400.0,  # Every 24 hours
+    "cleanup-stale-tokens": {
+        "task": "notification.tasks.cleanup_stale_tokens",
+        "schedule": 86400.0,  # Every 24 hours
     },
-    'aggregate-daily-analytics': {
-        'task': 'notification.tasks.aggregate_daily_analytics',
-        'schedule': 86400.0,  # Every 24 hours
+    "aggregate-daily-analytics": {
+        "task": "notification.tasks.aggregate_daily_analytics",
+        "schedule": 86400.0,  # Every 24 hours
     },
 }
 
 # Redis Cache
 CACHES = {
-    'default': {
-        'BACKEND': 'django_redis.cache.RedisCache',
-        'LOCATION': env('REDIS_URL'),
-        'OPTIONS': {
-            'CLIENT_CLASS': 'django_redis.client.DefaultClient',
+    "default": {
+        "BACKEND": "django_redis.cache.RedisCache",
+        "LOCATION": env("REDIS_URL"),
+        "OPTIONS": {
+            "CLIENT_CLASS": "django_redis.client.DefaultClient",
         },
     }
 }
 
 
 REST_FRAMEWORK = {
-    'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
-
-    'DEFAULT_AUTHENTICATION_CLASSES': [
-        'notification.middleware.ApiClientAuthentication',
+    "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
+    "DEFAULT_AUTHENTICATION_CLASSES": [
+        "notification.middleware.ApiClientAuthentication",
     ],
-    'DEFAULT_PERMISSION_CLASSES': [
-        'rest_framework.permissions.IsAuthenticated',
+    "DEFAULT_PERMISSION_CLASSES": [
+        "rest_framework.permissions.IsAuthenticated",
     ],
-
     # Cursor-based pagination
-    'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.CursorPagination',
-    'PAGE_SIZE': 50,
-
+    "DEFAULT_PAGINATION_CLASS": "rest_framework.pagination.CursorPagination",
+    "PAGE_SIZE": 50,
     # Filtering
-    'DEFAULT_FILTER_BACKENDS': [
-        'django_filters.rest_framework.DjangoFilterBackend',
-        'rest_framework.filters.SearchFilter',
-        'rest_framework.filters.OrderingFilter',
+    "DEFAULT_FILTER_BACKENDS": [
+        "django_filters.rest_framework.DjangoFilterBackend",
+        "rest_framework.filters.SearchFilter",
+        "rest_framework.filters.OrderingFilter",
     ],
-
     # Consistent error responses
-    'EXCEPTION_HANDLER': 'notification.exceptions.custom_exception_handler',
-
+    "EXCEPTION_HANDLER": "notification.exceptions.custom_exception_handler",
     # Rate limiting
-    'DEFAULT_THROTTLE_CLASSES': [
-        'notification.throttling.ApiClientRateThrottle',
+    "DEFAULT_THROTTLE_CLASSES": [
+        "notification.throttling.ApiClientRateThrottle",
     ],
-    'DEFAULT_THROTTLE_RATES': {
-        'api_client': '200/minute',
-        'send_notification': '100/minute',
-        'bulk_send': '10/minute',
-        'device_registration': '50/minute',
-        'analytics': '30/minute',
+    "DEFAULT_THROTTLE_RATES": {
+        "api_client": "200/minute",
+        "send_notification": "100/minute",
+        "bulk_send": "10/minute",
+        "device_registration": "50/minute",
+        "analytics": "30/minute",
     },
 }
 
 
 # drf-spectacular (Swagger / OpenAPI)
 SPECTACULAR_SETTINGS = {
-    'TITLE': 'FCM Notification Server API',
-    'DESCRIPTION': 'Multi-tenant Firebase Cloud Messaging notification server with webhook support, '
-                   'bulk sending, topic broadcasting, and delivery tracking.',
-    'VERSION': '1.0.0',
-    'SERVE_INCLUDE_SCHEMA': False,
-
+    "TITLE": "FCM Notification Server API",
+    "DESCRIPTION": "Multi-tenant Firebase Cloud Messaging notification server with webhook support, "
+    "bulk sending, topic broadcasting, and delivery tracking.",
+    "VERSION": "1.0.0",
+    "SERVE_INCLUDE_SCHEMA": False,
     # Group endpoints by tag
-    'TAGS': [
-        {'name': 'Notifications', 'description': 'Send push notifications'},
-        {'name': 'Devices', 'description': 'Manage device registrations'},
-        {'name': 'Profiles', 'description': 'User profile management'},
-        {'name': 'Topics', 'description': 'Topic subscription management'},
-        {'name': 'Templates', 'description': 'Notification templates'},
-        {'name': 'Firebase Projects', 'description': 'Multi-tenant Firebase project management'},
-        {'name': 'Webhooks', 'description': 'Webhook endpoint management'},
-        {'name': 'Analytics', 'description': 'Notification analytics'},
-        {'name': 'Health', 'description': 'Service health checks'},
+    "TAGS": [
+        {"name": "Notifications", "description": "Send push notifications"},
+        {"name": "Devices", "description": "Manage device registrations"},
+        {"name": "Profiles", "description": "User profile management"},
+        {"name": "Topics", "description": "Topic subscription management"},
+        {"name": "Templates", "description": "Notification templates"},
+        {
+            "name": "Firebase Projects",
+            "description": "Multi-tenant Firebase project management",
+        },
+        {"name": "Webhooks", "description": "Webhook endpoint management"},
+        {"name": "Analytics", "description": "Notification analytics"},
+        {"name": "Health", "description": "Service health checks"},
     ],
-
-    'COMPONENT_SPLIT_REQUEST': True,
+    "COMPONENT_SPLIT_REQUEST": True,
 }
 
 # ---------------------------------------------------------------------------
@@ -252,12 +252,12 @@ SPECTACULAR_SETTINGS = {
 # ---------------------------------------------------------------------------
 # In development, allow localhost. In production set CORS_ALLOWED_ORIGINS in .env.
 CORS_ALLOWED_ORIGINS = env.list(
-    'CORS_ALLOWED_ORIGINS',
+    "CORS_ALLOWED_ORIGINS",
     default=[
-        'http://localhost:3000',
-        'http://localhost:8000',
-        'http://127.0.0.1:3000',
-        'http://127.0.0.1:8000',
+        "http://localhost:3000",
+        "http://localhost:8000",
+        "http://127.0.0.1:3000",
+        "http://127.0.0.1:8000",
     ],
 )
 CORS_ALLOW_CREDENTIALS = True
@@ -270,41 +270,40 @@ CSRF_TRUSTED_ORIGINS = [
 # ---------------------------------------------------------------------------
 # Structured Logging (django-structlog -> JSON logs in production)
 # ---------------------------------------------------------------------------
-import structlog
 
 LOGGING = {
-    'version': 1,
-    'disable_existing_loggers': False,
-    'formatters': {
-        'json_formatter': {
-            '()': structlog.stdlib.ProcessorFormatter,
-            'processor': structlog.processors.JSONRenderer(),
+    "version": 1,
+    "disable_existing_loggers": False,
+    "formatters": {
+        "json_formatter": {
+            "()": structlog.stdlib.ProcessorFormatter,
+            "processor": structlog.processors.JSONRenderer(),
         },
-        'plain_console': {
-            '()': structlog.stdlib.ProcessorFormatter,
-            'processor': structlog.dev.ConsoleRenderer(),
-        },
-    },
-    'handlers': {
-        'console': {
-            'class': 'logging.StreamHandler',
-            'formatter': 'plain_console' if DEBUG else 'json_formatter',
+        "plain_console": {
+            "()": structlog.stdlib.ProcessorFormatter,
+            "processor": structlog.dev.ConsoleRenderer(),
         },
     },
-    'root': {
-        'handlers': ['console'],
-        'level': 'INFO',
-    },
-    'loggers': {
-        'django': {
-            'handlers': ['console'],
-            'level': 'INFO',
-            'propagate': False,
+    "handlers": {
+        "console": {
+            "class": "logging.StreamHandler",
+            "formatter": "plain_console" if DEBUG else "json_formatter",
         },
-        'notification': {
-            'handlers': ['console'],
-            'level': 'DEBUG' if DEBUG else 'INFO',
-            'propagate': False,
+    },
+    "root": {
+        "handlers": ["console"],
+        "level": "INFO",
+    },
+    "loggers": {
+        "django": {
+            "handlers": ["console"],
+            "level": "INFO",
+            "propagate": False,
+        },
+        "notification": {
+            "handlers": ["console"],
+            "level": "DEBUG" if DEBUG else "INFO",
+            "propagate": False,
         },
     },
 }
@@ -313,7 +312,7 @@ structlog.configure(
     processors=[
         structlog.contextvars.merge_contextvars,
         structlog.stdlib.filter_by_level,
-        structlog.processors.TimeStamper(fmt='iso'),
+        structlog.processors.TimeStamper(fmt="iso"),
         structlog.stdlib.add_logger_name,
         structlog.stdlib.add_log_level,
         structlog.stdlib.PositionalArgumentsFormatter(),
@@ -332,11 +331,11 @@ structlog.configure(
 # ---------------------------------------------------------------------------
 # Sentry (error tracking -- only active when SENTRY_DSN is set)
 # ---------------------------------------------------------------------------
-_sentry_dsn = env('SENTRY_DSN', default='')
+_sentry_dsn = env("SENTRY_DSN", default="")
 if _sentry_dsn:
     import sentry_sdk
-    from sentry_sdk.integrations.django import DjangoIntegration
     from sentry_sdk.integrations.celery import CeleryIntegration
+    from sentry_sdk.integrations.django import DjangoIntegration
 
     sentry_sdk.init(
         dsn=_sentry_dsn,

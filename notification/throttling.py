@@ -18,14 +18,15 @@ class ApiClientRateThrottle(SimpleRateThrottle):
     Uses the ApiClient's client_id as the unique key so each client gets
     its own rate limit bucket.
     """
-    scope = 'api_client'
+
+    scope = "api_client"
 
     def get_cache_key(self, request, view):
-        if not hasattr(request.user, 'client_id'):
+        if not hasattr(request.user, "client_id"):
             return None  # Not an ApiClient — don't throttle
         return self.cache_format % {
-            'scope': self.scope,
-            'ident': str(request.user.client_id),
+            "scope": self.scope,
+            "ident": str(request.user.client_id),
         }
 
 
@@ -34,14 +35,15 @@ class SendNotificationThrottle(SimpleRateThrottle):
     Stricter throttle for the single send notification endpoint.
     Applied in addition to the default api_client throttle.
     """
-    scope = 'send_notification'
+
+    scope = "send_notification"
 
     def get_cache_key(self, request, view):
-        if not hasattr(request.user, 'client_id'):
+        if not hasattr(request.user, "client_id"):
             return None
         return self.cache_format % {
-            'scope': self.scope,
-            'ident': str(request.user.client_id),
+            "scope": self.scope,
+            "ident": str(request.user.client_id),
         }
 
 
@@ -50,38 +52,41 @@ class BulkSendThrottle(SimpleRateThrottle):
     Throttle for bulk send endpoint — much lower limit (10/minute)
     as each call can send to hundreds of devices.
     """
-    scope = 'bulk_send'
+
+    scope = "bulk_send"
 
     def get_cache_key(self, request, view):
-        if not hasattr(request.user, 'client_id'):
+        if not hasattr(request.user, "client_id"):
             return None
         return self.cache_format % {
-            'scope': self.scope,
-            'ident': str(request.user.client_id),
+            "scope": self.scope,
+            "ident": str(request.user.client_id),
         }
 
 
 class DeviceRegistrationThrottle(SimpleRateThrottle):
     """Throttle for device registration endpoint."""
-    scope = 'device_registration'
+
+    scope = "device_registration"
 
     def get_cache_key(self, request, view):
-        if not hasattr(request.user, 'client_id'):
+        if not hasattr(request.user, "client_id"):
             return None
         return self.cache_format % {
-            'scope': self.scope,
-            'ident': str(request.user.client_id),
+            "scope": self.scope,
+            "ident": str(request.user.client_id),
         }
 
 
 class AnalyticsThrottle(SimpleRateThrottle):
     """Throttle for analytics endpoints."""
-    scope = 'analytics'
+
+    scope = "analytics"
 
     def get_cache_key(self, request, view):
-        if not hasattr(request.user, 'client_id'):
+        if not hasattr(request.user, "client_id"):
             return None
         return self.cache_format % {
-            'scope': self.scope,
-            'ident': str(request.user.client_id),
+            "scope": self.scope,
+            "ident": str(request.user.client_id),
         }

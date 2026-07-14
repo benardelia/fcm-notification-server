@@ -5,14 +5,13 @@ import datetime
 from firebase_admin import messaging
 
 
-def send_to_token(registration_token : str):
-   
+def send_to_token(registration_token: str):
 
     # See documentation on defining a message payload.
     message = messaging.Message(
         data={
-            'score': '850',
-            'time': '2:45',
+            "score": "850",
+            "time": "2:45",
         },
         token=registration_token,
     )
@@ -21,7 +20,7 @@ def send_to_token(registration_token : str):
     # registration token.
     response = messaging.send(message)
     # Response is a message ID string.
-    print('Successfully sent message:', response)
+    print("Successfully sent message:", response)
     return response
     # [END send_to_token]
 
@@ -29,13 +28,13 @@ def send_to_token(registration_token : str):
 def send_to_topic():
     # [START send_to_topic]
     # The topic name can be optionally prefixed with "/topics/".
-    topic = 'highScores'
+    topic = "highScores"
 
     # See documentation on defining a message payload.
     message = messaging.Message(
         data={
-            'score': '850',
-            'time': '2:45',
+            "score": "850",
+            "time": "2:45",
         },
         topic=topic,
     )
@@ -43,7 +42,7 @@ def send_to_topic():
     # Send a message to the devices subscribed to the provided topic.
     response = messaging.send(message)
     # Response is a message ID string.
-    print('Successfully sent message:', response)
+    print("Successfully sent message:", response)
     # [END send_to_topic]
 
 
@@ -56,8 +55,8 @@ def send_to_condition():
     # See documentation on defining a message payload.
     message = messaging.Message(
         notification=messaging.Notification(
-            title='$GOOG up 1.43% on the day',
-            body='$GOOG gained 11.80 points to close at 835.67, up 1.43% on the day.',
+            title="$GOOG up 1.43% on the day",
+            body="$GOOG gained 11.80 points to close at 835.67, up 1.43% on the day.",
         ),
         condition=condition,
     )
@@ -66,24 +65,24 @@ def send_to_condition():
     # specified by the provided condition.
     response = messaging.send(message)
     # Response is a message ID string.
-    print('Successfully sent message:', response)
+    print("Successfully sent message:", response)
     # [END send_to_condition]
 
 
 def send_dry_run():
     message = messaging.Message(
         data={
-            'score': '850',
-            'time': '2:45',
+            "score": "850",
+            "time": "2:45",
         },
-        token='token',
+        token="token",
     )
 
     # [START send_dry_run]
     # Send a message in the dry run mode.
     response = messaging.send(message, dry_run=True)
     # Response is a message ID string.
-    print('Dry run successful:', response)
+    print("Dry run successful:", response)
     # [END send_dry_run]
 
 
@@ -92,16 +91,16 @@ def android_message(registration_token: str):
     message = messaging.Message(
         android=messaging.AndroidConfig(
             ttl=datetime.timedelta(seconds=3600),
-            priority='normal',
+            priority="normal",
             notification=messaging.AndroidNotification(
-                title='$GOOG up 1.43% on the day',
-                body='$GOOG gained 11.80 points to close at 835.67, up 1.43% on the day.',
-                icon = "ic_launcher",
-                color='#f45342'
+                title="$GOOG up 1.43% on the day",
+                body="$GOOG gained 11.80 points to close at 835.67, up 1.43% on the day.",
+                icon="ic_launcher",
+                color="#f45342",
             ),
         ),
         # topic='industry-tech',
-        token=registration_token
+        token=registration_token,
     )
     # [END android_message]
     return message
@@ -111,18 +110,18 @@ def apns_message():
     # [START apns_message]
     message = messaging.Message(
         apns=messaging.APNSConfig(
-            headers={'apns-priority': '10'},
+            headers={"apns-priority": "10"},
             payload=messaging.APNSPayload(
                 aps=messaging.Aps(
                     alert=messaging.ApsAlert(
-                        title='$GOOG up 1.43% on the day',
-                        body='$GOOG gained 11.80 points to close at 835.67, up 1.43% on the day.',
+                        title="$GOOG up 1.43% on the day",
+                        body="$GOOG gained 11.80 points to close at 835.67, up 1.43% on the day.",
                     ),
                     badge=42,
                 ),
             ),
         ),
-        topic='industry-tech',
+        topic="industry-tech",
     )
     # [END apns_message]
     return message
@@ -133,31 +132,32 @@ def webpush_message():
     message = messaging.Message(
         webpush=messaging.WebpushConfig(
             notification=messaging.WebpushNotification(
-                title='$GOOG up 1.43% on the day',
-                body='$GOOG gained 11.80 points to close at 835.67, up 1.43% on the day.',
-                icon='https://my-server/icon.png',
+                title="$GOOG up 1.43% on the day",
+                body="$GOOG gained 11.80 points to close at 835.67, up 1.43% on the day.",
+                icon="https://my-server/icon.png",
             ),
         ),
-        topic='industry-tech',
+        topic="industry-tech",
     )
     # [END webpush_message]
     return message
 
 
-def all_platforms_message(registration_token: str, title: str = '', body: str = '', data: dict | None = None):
+def all_platforms_message(
+    registration_token: str, title: str = "", body: str = "", data: dict | None = None
+):
     # [START multi_platforms_message]
     message = messaging.Message(
         notification=messaging.Notification(
-            title= title,
+            title=title,
             body=body,
         ),
         data=data,
         android=messaging.AndroidConfig(
             ttl=datetime.timedelta(seconds=3600),
-            priority='high',
+            priority="high",
             notification=messaging.AndroidNotification(
-                icon = "ic_launcher",
-                color='#f45342'
+                icon="ic_launcher", color="#f45342"
             ),
         ),
         apns=messaging.APNSConfig(
@@ -167,23 +167,20 @@ def all_platforms_message(registration_token: str, title: str = '', body: str = 
         ),
         # topic='industry-tech',
         token=registration_token,
-        
     )
     response = messaging.send(message)
     # [END multi_platforms_message]
     return response
 
-  
-
 
 def subscribe_to_topic():
-    topic = 'highScores'
+    topic = "highScores"
     # [START subscribe]
     # These registration tokens come from the client FCM SDKs.
     registration_tokens = [
-        'YOUR_REGISTRATION_TOKEN_1',
+        "YOUR_REGISTRATION_TOKEN_1",
         # ...
-        'YOUR_REGISTRATION_TOKEN_n',
+        "YOUR_REGISTRATION_TOKEN_n",
     ]
 
     # Subscribe the devices corresponding to the registration tokens to the
@@ -191,18 +188,18 @@ def subscribe_to_topic():
     response = messaging.subscribe_to_topic(registration_tokens, topic)
     # See the TopicManagementResponse reference documentation
     # for the contents of response.
-    print(response.success_count, 'tokens were subscribed successfully')
+    print(response.success_count, "tokens were subscribed successfully")
     # [END subscribe]
 
 
 def unsubscribe_from_topic():
-    topic = 'highScores'
+    topic = "highScores"
     # [START unsubscribe]
     # These registration tokens come from the client FCM SDKs.
     registration_tokens = [
-        'YOUR_REGISTRATION_TOKEN_1',
+        "YOUR_REGISTRATION_TOKEN_1",
         # ...
-        'YOUR_REGISTRATION_TOKEN_n',
+        "YOUR_REGISTRATION_TOKEN_n",
     ]
 
     # Unubscribe the devices corresponding to the registration tokens from the
@@ -210,41 +207,43 @@ def unsubscribe_from_topic():
     response = messaging.unsubscribe_from_topic(registration_tokens, topic)
     # See the TopicManagementResponse reference documentation
     # for the contents of response.
-    print(response.success_count, 'tokens were unsubscribed successfully')
+    print(response.success_count, "tokens were unsubscribed successfully")
     # [END unsubscribe]
 
 
 def send_all():
-    registration_token = 'YOUR_REGISTRATION_TOKEN'
+    registration_token = "YOUR_REGISTRATION_TOKEN"
     # [START send_all]
     # Create a list containing up to 500 messages.
     messages = [
         messaging.Message(
-            notification=messaging.Notification('Price drop', '5% off all foods'),
+            notification=messaging.Notification("Price drop", "5% off all foods"),
             token=registration_token,
         ),
         # ...
         messaging.Message(
-            notification=messaging.Notification('Price drop', '2% off all packages'),
-            topic='readers-club',
+            notification=messaging.Notification("Price drop", "2% off all packages"),
+            topic="readers-club",
         ),
     ]
 
     response = messaging.send_all(messages)
     # See the BatchResponse reference documentation
     # for the contents of response.
-    print('{0} messages were sent successfully'.format(response.success_count))
+    print("{0} messages were sent successfully".format(response.success_count))
     # [END send_all]
 
 
-def send_multicast(tokens : list, title: str = '', body: str = '', data: dict | None = None):
+def send_multicast(
+    tokens: list, title: str = "", body: str = "", data: dict | None = None
+):
     # [START send_multicast]
     # Create a list containing up to 500 registration tokens.
     # These registration tokens come from the client FCM SDKs.
     registration_tokens = [
-        'YOUR_REGISTRATION_TOKEN_1',
+        "YOUR_REGISTRATION_TOKEN_1",
         # ...
-        'YOUR_REGISTRATION_TOKEN_N',
+        "YOUR_REGISTRATION_TOKEN_N",
     ]
 
     message = messaging.MulticastMessage(
@@ -254,7 +253,7 @@ def send_multicast(tokens : list, title: str = '', body: str = '', data: dict | 
     response = messaging.send_multicast(message)
     # See the BatchResponse reference documentation
     # for the contents of response.
-    print('{0} messages were sent successfully'.format(response.success_count))
+    print("{0} messages were sent successfully".format(response.success_count))
     return response
     # [END send_multicast]
 
@@ -263,13 +262,13 @@ def send_multicast_and_handle_errors():
     # [START send_multicast_error]
     # These registration tokens come from the client FCM SDKs.
     registration_tokens = [
-        'YOUR_REGISTRATION_TOKEN_1',
+        "YOUR_REGISTRATION_TOKEN_1",
         # ...
-        'YOUR_REGISTRATION_TOKEN_N',
+        "YOUR_REGISTRATION_TOKEN_N",
     ]
 
     message = messaging.MulticastMessage(
-        data={'score': '850', 'time': '2:45'},
+        data={"score": "850", "time": "2:45"},
         tokens=registration_tokens,
     )
     response = messaging.send_multicast(message)
@@ -280,5 +279,5 @@ def send_multicast_and_handle_errors():
             if not resp.success:
                 # The order of responses corresponds to the order of the registration tokens.
                 failed_tokens.append(registration_tokens[idx])
-        print('List of tokens that caused failures: {0}'.format(failed_tokens))
+        print("List of tokens that caused failures: {0}".format(failed_tokens))
     # [END send_multicast_error]

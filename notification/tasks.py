@@ -1,5 +1,6 @@
 import logging
 from datetime import timedelta
+
 from celery import shared_task
 from django.utils import timezone
 
@@ -8,18 +9,31 @@ logger = logging.getLogger(__name__)
 
 def _exponential_backoff(retries):
     """Calculate exponential backoff delay: 30s, 60s, 120s, 240s, 480s."""
-    return 30 * (2 ** retries)
+    return 30 * (2**retries)
 
 
 @shared_task(bind=True, max_retries=5)
-def send_notification_async(self, notification_id, device_id, firebase_project_id=None,
-                            title='', body='', data=None, image_url='', priority='high',
-                            is_silent=False, click_action='', collapse_key='', actions=None):
+def send_notification_async(
+    self,
+    notification_id,
+    device_id,
+    firebase_project_id=None,
+    title="",
+    body="",
+    data=None,
+    image_url="",
+    priority="high",
+    is_silent=False,
+    click_action="",
+    collapse_key="",
+    actions=None,
+):
     """
     Send a push notification to a single device asynchronously.
     Retries up to 5 times with exponential backoff.
     """
-    from notification.models import Notification, Device, NotificationDeliveryLog, FirebaseProject
+    from notification.models import (Device, FirebaseProject, Notification,
+                                     NotificationDeliveryLog)
     from notification.services import FCMService
 
     try:
@@ -28,7 +42,9 @@ def send_notification_async(self, notification_id, device_id, firebase_project_i
 
         firebase_project = None
         if firebase_project_id:
-            firebase_project = FirebaseProject.objects.get(pk=firebase_project_id, is_active=True)
+            firebase_project = FirebaseProject.objects.get(
+                pk=firebase_project_id, is_active=True
+            )
 
         fcm = FCMService(firebase_project=firebase_project)
         response_id = fcm.send_to_device(
@@ -48,34 +64,37 @@ def send_notification_async(self, notification_id, device_id, firebase_project_i
             notification=notification,
             device=device,
             defaults={
-                'delivered_at': timezone.now(),
-                'status': 'sent',
+                "delivered_at": timezone.now(),
+                "status": "sent",
             },
         )
 
         # Update retry count on notification
         Notification.objects.filter(pk=notification_id).update(
             retry_count=self.request.retries,
-            status='sent',
+            status="sent",
             sent_at=timezone.now(),
         )
 
         logger.info(f"Async notification sent: {notification_id} -> device {device_id}")
-        return {'status': 'sent', 'response': str(response_id)}
+        return {"status": "sent", "response": str(response_id)}
 
     except Exception as exc:
-        logger.error(f"Async notification failed (attempt {self.request.retries + 1}): "
-                     f"{notification_id} -> device {device_id}: {exc}")
+        logger.error(
+            f"Async notification failed (attempt {self.request.retries + 1}): "
+            f"{notification_id} -> device {device_id}: {exc}"
+        )
 
         # Update delivery log with failure
         try:
             from notification.models import NotificationDeliveryLog
+
             NotificationDeliveryLog.objects.update_or_create(
                 notification_id=notification_id,
                 device_id=device_id,
                 defaults={
-                    'status': 'failed',
-                    'error_message': str(exc),
+                    "status": "failed",
+                    "error_message": str(exc),
                 },
             )
         except Exception:
@@ -84,12 +103,13 @@ def send_notification_async(self, notification_id, device_id, firebase_project_i
         # Update retry count
         try:
             from notification.models import Notification
+
             Notification.objects.filter(pk=notification_id).update(
                 retry_count=self.request.retries + 1,
             )
             # Mark as failed if max retries exhausted
             if self.request.retries >= self.max_retries - 1:
-                Notification.objects.filter(pk=notification_id).update(status='failed')
+                Notification.objects.filter(pk=notification_id).update(status="failed")
         except Exception:
             pass
 
@@ -97,14 +117,26 @@ def send_notification_async(self, notification_id, device_id, firebase_project_i
 
 
 @shared_task(bind=True, max_retries=5)
-def send_bulk_notification_async(self, notification_id, device_ids, firebase_project_id=None,
-                                 title='', body='', data=None, image_url='', priority='high',
-                                 is_silent=False, click_action='', collapse_key=''):
+def send_bulk_notification_async(
+    self,
+    notification_id,
+    device_ids,
+    firebase_project_id=None,
+    title="",
+    body="",
+    data=None,
+    image_url="",
+    priority="high",
+    is_silent=False,
+    click_action="",
+    collapse_key="",
+):
     """
     Send a push notification to multiple devices asynchronously via multicast.
     Retries with exponential backoff.
     """
-    from notification.models import Notification, Device, NotificationDeliveryLog, FirebaseProject
+    from notification.models import (Device, FirebaseProject, Notification,
+                                     NotificationDeliveryLog)
     from notification.services import FCMService
 
     try:
@@ -114,11 +146,13 @@ def send_bulk_notification_async(self, notification_id, device_ids, firebase_pro
 
         if not tokens:
             logger.warning(f"No active devices for bulk notification {notification_id}")
-            return {'status': 'no_devices'}
+            return {"status": "no_devices"}
 
         firebase_project = None
         if firebase_project_id:
-            firebase_project = FirebaseProject.objects.get(pk=firebase_project_id, is_active=True)
+            firebase_project = FirebaseProject.objects.get(
+                pk=firebase_project_id, is_active=True
+            )
 
         fcm = FCMService(firebase_project=firebase_project)
         response = fcm.send_multicast(
@@ -134,20 +168,22 @@ def send_bulk_notification_async(self, notification_id, device_ids, firebase_pro
         )
 
         for i, device in enumerate(devices):
-            individual_status = 'sent'
+            individual_status = "sent"
             error_message = None
-            if hasattr(response, 'responses') and i < len(response.responses):
+            if hasattr(response, "responses") and i < len(response.responses):
                 if not response.responses[i].success:
-                    individual_status = 'failed'
+                    individual_status = "failed"
                     error_message = str(response.responses[i].exception)
 
             NotificationDeliveryLog.objects.update_or_create(
                 notification=notification,
                 device=device,
                 defaults={
-                    'delivered_at': timezone.now() if individual_status == 'sent' else None,
-                    'status': individual_status,
-                    'error_message': error_message,
+                    "delivered_at": (
+                        timezone.now() if individual_status == "sent" else None
+                    ),
+                    "status": individual_status,
+                    "error_message": error_message,
                 },
             )
 
@@ -156,9 +192,9 @@ def send_bulk_notification_async(self, notification_id, device_ids, firebase_pro
             f"{response.success_count} sent, {response.failure_count} failed"
         )
         return {
-            'status': 'completed',
-            'success_count': response.success_count,
-            'failure_count': response.failure_count,
+            "status": "completed",
+            "success_count": response.success_count,
+            "failure_count": response.failure_count,
         }
 
     except Exception as exc:
@@ -167,17 +203,28 @@ def send_bulk_notification_async(self, notification_id, device_ids, firebase_pro
 
 
 @shared_task(bind=True, max_retries=3)
-def send_topic_notification_async(self, notification_id, topic_name, firebase_project_id=None,
-                                  title='', body='', data=None, image_url='',
-                                  is_silent=False, click_action=''):
+def send_topic_notification_async(
+    self,
+    notification_id,
+    topic_name,
+    firebase_project_id=None,
+    title="",
+    body="",
+    data=None,
+    image_url="",
+    is_silent=False,
+    click_action="",
+):
     """Send a topic notification asynchronously with exponential backoff."""
-    from notification.models import Notification, FirebaseProject
+    from notification.models import FirebaseProject, Notification
     from notification.services import FCMService
 
     try:
         firebase_project = None
         if firebase_project_id:
-            firebase_project = FirebaseProject.objects.get(pk=firebase_project_id, is_active=True)
+            firebase_project = FirebaseProject.objects.get(
+                pk=firebase_project_id, is_active=True
+            )
 
         fcm = FCMService(firebase_project=firebase_project)
         response_id = fcm.send_to_topic(
@@ -191,15 +238,17 @@ def send_topic_notification_async(self, notification_id, topic_name, firebase_pr
         )
 
         Notification.objects.filter(pk=notification_id).update(
-            status='sent',
+            status="sent",
             sent_at=timezone.now(),
         )
 
-        logger.info(f"Topic notification sent: {notification_id} -> topic '{topic_name}'")
-        return {'status': 'sent', 'response': str(response_id)}
+        logger.info(
+            f"Topic notification sent: {notification_id} -> topic '{topic_name}'"
+        )
+        return {"status": "sent", "response": str(response_id)}
 
     except Exception as exc:
-        Notification.objects.filter(pk=notification_id).update(status='failed')
+        Notification.objects.filter(pk=notification_id).update(status="failed")
         logger.error(f"Topic notification failed: {notification_id}: {exc}")
         raise self.retry(exc=exc, countdown=_exponential_backoff(self.request.retries))
 
@@ -207,7 +256,7 @@ def send_topic_notification_async(self, notification_id, topic_name, firebase_pr
 @shared_task
 def dispatch_webhook_async(event_type, payload, api_client_id):
     """Dispatch webhook events asynchronously via Celery instead of threads."""
-    from notification.models import WebhookEndpoint, ApiClient
+    from notification.models import ApiClient, WebhookEndpoint
     from notification.services.webhook_dispatcher import _deliver_webhook
 
     try:
@@ -223,9 +272,9 @@ def dispatch_webhook_async(event_type, payload, api_client_id):
     matching = [w for w in webhooks if event_type in (w.events or [])]
 
     full_payload = {
-        'event': event_type,
-        'timestamp': timezone.now().isoformat(),
-        'data': payload,
+        "event": event_type,
+        "timestamp": timezone.now().isoformat(),
+        "data": payload,
     }
 
     for webhook in matching:
@@ -244,7 +293,7 @@ def cleanup_stale_tokens():
     stale = Device.objects.filter(is_active=True, last_seen__lt=cutoff)
     count = stale.update(is_active=False)
     logger.info(f"Deactivated {count} stale device tokens")
-    return {'deactivated': count}
+    return {"deactivated": count}
 
 
 @shared_task
@@ -254,15 +303,14 @@ def process_scheduled_notifications():
     Finds scheduled notifications that are due and sends them.
     Handles repeat intervals (daily, weekly, monthly).
     """
-    from notification.models import (
-        ScheduledNotification, Profile, Device, Notification,
-        NotificationDeliveryLog, FirebaseProject,
-    )
+    from notification.models import (Device, FirebaseProject, Notification,
+                                     NotificationDeliveryLog, Profile,
+                                     ScheduledNotification)
     from notification.services import FCMService, render_notification_template
 
     now = timezone.now()
     due = ScheduledNotification.objects.filter(
-        status__in=['pending', 'active'],
+        status__in=["pending", "active"],
         next_run_at__lte=now,
     )
 
@@ -279,9 +327,9 @@ def process_scheduled_notifications():
                     scheduled.template,
                     scheduled.template_variables,
                 )
-                title = rendered['title']
-                body = rendered['body']
-                data = {**rendered.get('data', {}), **data}
+                title = rendered["title"]
+                body = rendered["body"]
+                data = {**rendered.get("data", {}), **data}
 
             # Resolve Firebase project
             firebase_project = None
@@ -308,9 +356,7 @@ def process_scheduled_notifications():
                 profiles = Profile.objects.filter(
                     phone_number__in=scheduled.phone_numbers
                 )
-                devices = Device.objects.filter(
-                    profile__in=profiles, is_active=True
-                )
+                devices = Device.objects.filter(profile__in=profiles, is_active=True)
                 tokens = [d.push_token for d in devices]
 
                 if tokens:
@@ -324,14 +370,17 @@ def process_scheduled_notifications():
                         click_action=scheduled.click_action,
                         template=scheduled.template,
                         template_variables=scheduled.template_variables,
-                        status='sent',
+                        status="sent",
                         sent_at=now,
                     )
 
                     if len(tokens) == 1:
                         fcm.send_to_device(
-                            token=tokens[0], title=title, body=body,
-                            data=data, image_url=scheduled.image_url,
+                            token=tokens[0],
+                            title=title,
+                            body=body,
+                            data=data,
+                            image_url=scheduled.image_url,
                             priority=scheduled.priority,
                             is_silent=scheduled.is_silent,
                             click_action=scheduled.click_action or None,
@@ -340,27 +389,32 @@ def process_scheduled_notifications():
                             notification=notification,
                             device=devices[0],
                             delivered_at=now,
-                            status='sent',
+                            status="sent",
                         )
                     else:
                         response = fcm.send_multicast(
-                            tokens=tokens, title=title, body=body,
-                            data=data, image_url=scheduled.image_url,
+                            tokens=tokens,
+                            title=title,
+                            body=body,
+                            data=data,
+                            image_url=scheduled.image_url,
                             priority=scheduled.priority,
                             is_silent=scheduled.is_silent,
                             click_action=scheduled.click_action or None,
                         )
                         for i, device in enumerate(devices):
-                            ind_status = 'sent'
+                            ind_status = "sent"
                             error_msg = None
-                            if hasattr(response, 'responses') and i < len(response.responses):
+                            if hasattr(response, "responses") and i < len(
+                                response.responses
+                            ):
                                 if not response.responses[i].success:
-                                    ind_status = 'failed'
+                                    ind_status = "failed"
                                     error_msg = str(response.responses[i].exception)
                             NotificationDeliveryLog.objects.create(
                                 notification=notification,
                                 device=device,
-                                delivered_at=now if ind_status == 'sent' else None,
+                                delivered_at=now if ind_status == "sent" else None,
                                 status=ind_status,
                                 error_message=error_msg,
                             )
@@ -370,32 +424,37 @@ def process_scheduled_notifications():
             scheduled.occurrence_count += 1
 
             # Check if max occurrences reached
-            if scheduled.max_occurrences and scheduled.occurrence_count >= scheduled.max_occurrences:
-                scheduled.status = 'completed'
+            if (
+                scheduled.max_occurrences
+                and scheduled.occurrence_count >= scheduled.max_occurrences
+            ):
+                scheduled.status = "completed"
                 scheduled.next_run_at = None
-            elif scheduled.repeat_interval == 'none':
-                scheduled.status = 'completed'
+            elif scheduled.repeat_interval == "none":
+                scheduled.status = "completed"
                 scheduled.next_run_at = None
             else:
-                scheduled.status = 'active'
+                scheduled.status = "active"
                 # Calculate next run
-                if scheduled.repeat_interval == 'daily':
+                if scheduled.repeat_interval == "daily":
                     scheduled.next_run_at = now + timedelta(days=1)
-                elif scheduled.repeat_interval == 'weekly':
+                elif scheduled.repeat_interval == "weekly":
                     scheduled.next_run_at = now + timedelta(weeks=1)
-                elif scheduled.repeat_interval == 'monthly':
+                elif scheduled.repeat_interval == "monthly":
                     scheduled.next_run_at = now + timedelta(days=30)
 
             scheduled.save()
             processed += 1
 
         except Exception as e:
-            logger.error(f"Failed to process scheduled notification {scheduled.pk}: {e}")
-            scheduled.status = 'paused'
+            logger.error(
+                f"Failed to process scheduled notification {scheduled.pk}: {e}"
+            )
+            scheduled.status = "paused"
             scheduled.save()
 
     logger.info(f"Processed {processed} scheduled notifications")
-    return {'processed': processed}
+    return {"processed": processed}
 
 
 @shared_task
@@ -406,35 +465,35 @@ def aggregate_daily_analytics():
 
     Counts sent/delivered/read/failed per (api_client, platform, date) tuple.
     """
-    from django.db.models import Count, Q, Avg, F
-    from notification.models import NotificationDeliveryLog, NotificationAnalytics, ApiClient
-
     from datetime import date, timedelta
+
+    from notification.models import (NotificationAnalytics, NotificationDeliveryLog)
+
     yesterday = date.today() - timedelta(days=1)
 
     # Aggregate by platform across all clients
     logs = NotificationDeliveryLog.objects.filter(
         delivered_at__date=yesterday,
-    ).select_related('device', 'notification')
+    ).select_related("device", "notification")
 
     # Group by device platform
     platform_stats = {}
     for log in logs:
-        platform = log.device.device_type if log.device else ''
+        platform = log.device.device_type if log.device else ""
         key = platform
         if key not in platform_stats:
-            platform_stats[key] = {'sent': 0, 'delivered': 0, 'read': 0, 'failed': 0}
+            platform_stats[key] = {"sent": 0, "delivered": 0, "read": 0, "failed": 0}
 
-        if log.status == 'sent':
-            platform_stats[key]['sent'] += 1
-            platform_stats[key]['delivered'] += 1
-        elif log.status == 'read':
-            platform_stats[key]['sent'] += 1
-            platform_stats[key]['delivered'] += 1
-            platform_stats[key]['read'] += 1
-        elif log.status == 'failed':
-            platform_stats[key]['sent'] += 1
-            platform_stats[key]['failed'] += 1
+        if log.status == "sent":
+            platform_stats[key]["sent"] += 1
+            platform_stats[key]["delivered"] += 1
+        elif log.status == "read":
+            platform_stats[key]["sent"] += 1
+            platform_stats[key]["delivered"] += 1
+            platform_stats[key]["read"] += 1
+        elif log.status == "failed":
+            platform_stats[key]["sent"] += 1
+            platform_stats[key]["failed"] += 1
 
     created = 0
     for platform, stats in platform_stats.items():
@@ -444,13 +503,15 @@ def aggregate_daily_analytics():
             topic=None,
             platform=platform,
             defaults={
-                'total_sent': stats['sent'],
-                'total_delivered': stats['delivered'],
-                'total_read': stats['read'],
-                'total_failed': stats['failed'],
+                "total_sent": stats["sent"],
+                "total_delivered": stats["delivered"],
+                "total_read": stats["read"],
+                "total_failed": stats["failed"],
             },
         )
         created += 1
 
-    logger.info(f"Daily analytics aggregated for {yesterday}: {created} platform buckets")
-    return {'date': str(yesterday), 'buckets': created}
+    logger.info(
+        f"Daily analytics aggregated for {yesterday}: {created} platform buckets"
+    )
+    return {"date": str(yesterday), "buckets": created}
