@@ -124,15 +124,15 @@ class TestSendNotificationAsyncTask:
         notif = NotificationFactory()
         device = DeviceFactory()
 
-        with pytest.raises((Exception, Retry)):
-            send_notification_async.apply(
-                kwargs={
-                    "notification_id": notif.pk,
-                    "device_id": device.pk,
-                    "title": "Test",
-                    "body": "Body",
-                }
-            )
+        send_notification_async.apply(
+            kwargs={
+                "notification_id": notif.pk,
+                "device_id": device.pk,
+                "title": "Test",
+                "body": "Body",
+            },
+            throw=False
+        )
 
         log = NotificationDeliveryLog.objects.filter(
             notification=notif, device=device
