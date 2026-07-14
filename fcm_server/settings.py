@@ -262,6 +262,10 @@ CORS_ALLOWED_ORIGINS = env.list(
 )
 CORS_ALLOW_CREDENTIALS = True
 
+# CSRF Trusted Origins (Required for Admin login behind Nginx HTTPS proxy)
+CSRF_TRUSTED_ORIGINS = [
+    f"https://{env('DOMAIN_NAME', default='solidwastemanagement.duckdns.org')}",
+]
 
 # ---------------------------------------------------------------------------
 # Structured Logging (django-structlog -> JSON logs in production)
