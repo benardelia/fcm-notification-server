@@ -1,0 +1,28 @@
+name: Deploy to VPS
+
+on:
+  push:
+    branches: [ "main" ]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy to VPS via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USERNAME }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          script: |
+            # 1. Navigate to the project directory on your server
+            cd /var/www/fcm-notification-server
+            
+            # 2. Pull the latest code from the main branch
+            git pull origin main
+            
+            # 3. Build and restart the Docker containers using the production override
+            docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
+            
+            # 4. Automatically run any new database migrations
+            docker compose exec -T web python manage.py migrate
