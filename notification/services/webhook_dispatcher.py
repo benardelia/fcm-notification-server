@@ -15,7 +15,7 @@ MAX_FAILURE_COUNT = 10
 def _generate_signature(payload_bytes, secret_key):
     """Generate HMAC-SHA256 signature for webhook payload."""
     return hmac.new(
-        secret_key.encode('utf-8'),
+        secret_key.encode("utf-8"),
         payload_bytes,
         hashlib.sha256,
     ).hexdigest()
@@ -23,13 +23,13 @@ def _generate_signature(payload_bytes, secret_key):
 
 def _deliver_webhook(webhook, payload):
     """Deliver a single webhook request."""
-    payload_bytes = json.dumps(payload, default=str).encode('utf-8')
+    payload_bytes = json.dumps(payload, default=str).encode("utf-8")
     signature = _generate_signature(payload_bytes, webhook.secret_key)
 
     headers = {
-        'Content-Type': 'application/json',
-        'X-Webhook-Signature': signature,
-        'X-Webhook-Event': payload.get('event', ''),
+        "Content-Type": "application/json",
+        "X-Webhook-Signature": signature,
+        "X-Webhook-Event": payload.get("event", ""),
     }
 
     try:
@@ -44,7 +44,7 @@ def _deliver_webhook(webhook, payload):
         # Success — reset failure count
         webhook.failure_count = 0
         webhook.last_triggered_at = timezone.now()
-        webhook.save(update_fields=['failure_count', 'last_triggered_at'])
+        webhook.save(update_fields=["failure_count", "last_triggered_at"])
 
         logger.info(f"Webhook delivered: {webhook.url} ({response.status_code})")
 
@@ -59,7 +59,7 @@ def _deliver_webhook(webhook, payload):
                 f"Webhook deactivated after {MAX_FAILURE_COUNT} failures: {webhook.url}"
             )
 
-        webhook.save(update_fields=['failure_count', 'last_triggered_at', 'is_active'])
+        webhook.save(update_fields=["failure_count", "last_triggered_at", "is_active"])
         logger.error(f"Webhook delivery failed: {webhook.url} — {e}")
 
 
@@ -87,9 +87,9 @@ def dispatch_webhook(event_type, payload, api_client):
         return
 
     full_payload = {
-        'event': event_type,
-        'timestamp': timezone.now().isoformat(),
-        'data': payload,
+        "event": event_type,
+        "timestamp": timezone.now().isoformat(),
+        "data": payload,
     }
 
     # Dispatch each webhook in a background thread to avoid blocking the response

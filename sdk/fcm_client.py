@@ -38,6 +38,7 @@ import requests
 
 class FCMClientError(Exception):
     """Raised when the FCM server returns an error."""
+
     def __init__(self, status_code, detail):
         self.status_code = status_code
         self.detail = detail
@@ -55,14 +56,16 @@ class FCMClient:
             client_token: Your ApiClient auth token
             timeout: Request timeout in seconds
         """
-        self.base_url = base_url.rstrip('/')
+        self.base_url = base_url.rstrip("/")
         self.timeout = timeout
         self.session = requests.Session()
-        self.session.headers.update({
-            'Client-ID': str(client_id),
-            'Client-Token': str(client_token),
-            'Content-Type': 'application/json',
-        })
+        self.session.headers.update(
+            {
+                "Client-ID": str(client_id),
+                "Client-Token": str(client_token),
+                "Content-Type": "application/json",
+            }
+        )
 
     def _url(self, path):
         return f"{self.base_url}/notification/{path.lstrip('/')}"
@@ -87,52 +90,69 @@ class FCMClient:
     # Notification Sending
     # ----------------------------------
 
-    def send_notification(self, phone_number, title, body, data=None,
-                          image_url=None, priority='high', firebase_project_id=None):
+    def send_notification(
+        self,
+        phone_number,
+        title,
+        body,
+        data=None,
+        image_url=None,
+        priority="high",
+        firebase_project_id=None,
+    ):
         """Send a notification to a single device by phone number."""
         payload = {
-            'phone_number': phone_number,
-            'title': title,
-            'body': body,
-            'data': data or {},
-            'priority': priority,
+            "phone_number": phone_number,
+            "title": title,
+            "body": body,
+            "data": data or {},
+            "priority": priority,
         }
         if image_url:
-            payload['image_url'] = image_url
+            payload["image_url"] = image_url
         if firebase_project_id:
-            payload['firebase_project_id'] = firebase_project_id
-        return self._request('POST', 'notify/', json=payload)
+            payload["firebase_project_id"] = firebase_project_id
+        return self._request("POST", "notify/", json=payload)
 
-    def send_bulk(self, phone_numbers, title, body, data=None,
-                  image_url=None, priority='high', firebase_project_id=None):
+    def send_bulk(
+        self,
+        phone_numbers,
+        title,
+        body,
+        data=None,
+        image_url=None,
+        priority="high",
+        firebase_project_id=None,
+    ):
         """Send a notification to multiple phone numbers."""
         payload = {
-            'phone_numbers': phone_numbers,
-            'title': title,
-            'body': body,
-            'data': data or {},
-            'priority': priority,
+            "phone_numbers": phone_numbers,
+            "title": title,
+            "body": body,
+            "data": data or {},
+            "priority": priority,
         }
         if image_url:
-            payload['image_url'] = image_url
+            payload["image_url"] = image_url
         if firebase_project_id:
-            payload['firebase_project_id'] = firebase_project_id
-        return self._request('POST', 'notify/bulk/', json=payload)
+            payload["firebase_project_id"] = firebase_project_id
+        return self._request("POST", "notify/bulk/", json=payload)
 
-    def send_to_topic(self, topic, title, body, data=None,
-                      image_url=None, firebase_project_id=None):
+    def send_to_topic(
+        self, topic, title, body, data=None, image_url=None, firebase_project_id=None
+    ):
         """Send a notification to all subscribers of a topic."""
         payload = {
-            'topic': topic,
-            'title': title,
-            'body': body,
-            'data': data or {},
+            "topic": topic,
+            "title": title,
+            "body": body,
+            "data": data or {},
         }
         if image_url:
-            payload['image_url'] = image_url
+            payload["image_url"] = image_url
         if firebase_project_id:
-            payload['firebase_project_id'] = firebase_project_id
-        return self._request('POST', 'notify/topic/', json=payload)
+            payload["firebase_project_id"] = firebase_project_id
+        return self._request("POST", "notify/topic/", json=payload)
 
     # ----------------------------------
     # Device Management
@@ -140,22 +160,22 @@ class FCMClient:
 
     def list_devices(self):
         """List all registered devices."""
-        return self._request('GET', 'device/')
+        return self._request("GET", "device/")
 
     def register_device(self, profile_id, device_type, push_token, app_version=None):
         """Register a new device."""
         payload = {
-            'profile': profile_id,
-            'device_type': device_type,
-            'push_token': push_token,
+            "profile": profile_id,
+            "device_type": device_type,
+            "push_token": push_token,
         }
         if app_version:
-            payload['app_version'] = app_version
-        return self._request('POST', 'device/', json=payload)
+            payload["app_version"] = app_version
+        return self._request("POST", "device/", json=payload)
 
     def delete_device(self, device_id):
         """Remove a device."""
-        return self._request('DELETE', f'device/{device_id}/')
+        return self._request("DELETE", f"device/{device_id}/")
 
     # ----------------------------------
     # Profile Management
@@ -163,15 +183,15 @@ class FCMClient:
 
     def list_profiles(self):
         """List all profiles."""
-        return self._request('GET', 'profile/')
+        return self._request("GET", "profile/")
 
     def create_profile(self, phone_number):
         """Create a new profile."""
-        return self._request('POST', 'profile/', json={'phone_number': phone_number})
+        return self._request("POST", "profile/", json={"phone_number": phone_number})
 
     def get_profile(self, profile_id):
         """Get profile details."""
-        return self._request('GET', f'profile/{profile_id}/')
+        return self._request("GET", f"profile/{profile_id}/")
 
     # ----------------------------------
     # Topic Management
@@ -179,14 +199,18 @@ class FCMClient:
 
     def list_topics(self):
         """List all topics."""
-        return self._request('GET', 'topic/')
+        return self._request("GET", "topic/")
 
-    def create_topic(self, name, description=''):
+    def create_topic(self, name, description=""):
         """Create a new topic."""
-        return self._request('POST', 'topic/', json={
-            'name': name,
-            'description': description,
-        })
+        return self._request(
+            "POST",
+            "topic/",
+            json={
+                "name": name,
+                "description": description,
+            },
+        )
 
     # ----------------------------------
     # Webhook Management
@@ -194,7 +218,7 @@ class FCMClient:
 
     def list_webhooks(self):
         """List all webhooks for the authenticated client."""
-        return self._request('GET', 'webhooks/')
+        return self._request("GET", "webhooks/")
 
     def create_webhook(self, url, events, secret_key):
         """
@@ -205,15 +229,19 @@ class FCMClient:
             events: List of event types, e.g. ['notification.sent', 'notification.read']
             secret_key: Secret for HMAC signature verification
         """
-        return self._request('POST', 'webhooks/', json={
-            'url': url,
-            'events': events,
-            'secret_key': secret_key,
-        })
+        return self._request(
+            "POST",
+            "webhooks/",
+            json={
+                "url": url,
+                "events": events,
+                "secret_key": secret_key,
+            },
+        )
 
     def delete_webhook(self, webhook_id):
         """Remove a webhook endpoint."""
-        return self._request('DELETE', f'webhooks/{webhook_id}/')
+        return self._request("DELETE", f"webhooks/{webhook_id}/")
 
     # ----------------------------------
     # Firebase Project Management
@@ -221,7 +249,7 @@ class FCMClient:
 
     def list_firebase_projects(self):
         """List Firebase projects for the authenticated client."""
-        return self._request('GET', 'firebase-projects/')
+        return self._request("GET", "firebase-projects/")
 
     def create_firebase_project(self, project_name, credentials_json, is_default=False):
         """
@@ -232,15 +260,19 @@ class FCMClient:
             credentials_json: The full service account JSON dict
             is_default: Whether this is the default project for this client
         """
-        return self._request('POST', 'firebase-projects/', json={
-            'project_name': project_name,
-            'credentials_json': credentials_json,
-            'is_default': is_default,
-        })
+        return self._request(
+            "POST",
+            "firebase-projects/",
+            json={
+                "project_name": project_name,
+                "credentials_json": credentials_json,
+                "is_default": is_default,
+            },
+        )
 
     def delete_firebase_project(self, project_id):
         """Remove a Firebase project."""
-        return self._request('DELETE', f'firebase-projects/{project_id}/')
+        return self._request("DELETE", f"firebase-projects/{project_id}/")
 
     # ----------------------------------
     # Templates
@@ -248,18 +280,28 @@ class FCMClient:
 
     def list_templates(self):
         """List notification templates."""
-        return self._request('GET', 'templates/')
+        return self._request("GET", "templates/")
 
-    def create_template(self, name, title_template, body_template,
-                        default_data=None, platform_overrides=None):
+    def create_template(
+        self,
+        name,
+        title_template,
+        body_template,
+        default_data=None,
+        platform_overrides=None,
+    ):
         """Create a notification template."""
-        return self._request('POST', 'templates/', json={
-            'name': name,
-            'title_template': title_template,
-            'body_template': body_template,
-            'default_data': default_data or {},
-            'platform_overrides': platform_overrides or {},
-        })
+        return self._request(
+            "POST",
+            "templates/",
+            json={
+                "name": name,
+                "title_template": title_template,
+                "body_template": body_template,
+                "default_data": default_data or {},
+                "platform_overrides": platform_overrides or {},
+            },
+        )
 
     # ----------------------------------
     # Analytics
@@ -267,7 +309,7 @@ class FCMClient:
 
     def get_analytics(self):
         """Get notification analytics."""
-        return self._request('GET', 'analytics/')
+        return self._request("GET", "analytics/")
 
     # ----------------------------------
     # Delivery Logs
@@ -275,8 +317,8 @@ class FCMClient:
 
     def list_delivery_logs(self):
         """List delivery logs."""
-        return self._request('GET', 'delivery-log/')
+        return self._request("GET", "delivery-log/")
 
     def get_delivery_log(self, log_id):
         """Get a specific delivery log."""
-        return self._request('GET', f'delivery-log/{log_id}/')
+        return self._request("GET", f"delivery-log/{log_id}/")

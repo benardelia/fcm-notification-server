@@ -1,5 +1,20 @@
 from django.contrib import admin
-from .models import *
+
+from .models import (
+    ApiClient,
+    Device,
+    FirebaseProject,
+    Notification,
+    NotificationAnalytics,
+    NotificationDeliveryLog,
+    NotificationTemplate,
+    Profile,
+    ScheduledNotification,
+    Topic,
+    UserTopic,
+    WebhookEndpoint,
+)
+
 # Register your models here.
 
 admin.site.register(Profile)

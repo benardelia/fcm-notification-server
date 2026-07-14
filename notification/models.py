@@ -1,6 +1,7 @@
 import uuid
-from django.db import models
+
 from django.contrib.auth.models import User
+from django.db import models
 
 
 # ------------------------------
@@ -15,12 +16,15 @@ class Profile(models.Model):
     is_active = models.BooleanField(default=True)
 
     def __str__(self):
-        return self.phone_number or self.email or f'Profile #{self.pk}'
+        return self.phone_number or self.email or f"Profile #{self.pk}"
 
     def clean(self):
         from django.core.exceptions import ValidationError
+
         if not self.phone_number and not self.email:
-            raise ValidationError('A profile must have at least a phone number or an email address.')
+            raise ValidationError(
+                "A profile must have at least a phone number or an email address."
+            )
 
 
 # ------------------------------
@@ -33,7 +37,9 @@ class Device(models.Model):
         ("Web", "Web"),
     )
 
-    profile = models.ForeignKey(Profile, on_delete=models.CASCADE, related_name="devices")
+    profile = models.ForeignKey(
+        Profile, on_delete=models.CASCADE, related_name="devices"
+    )
     device_type = models.CharField(max_length=20, choices=DEVICE_TYPES)
     push_token = models.CharField(max_length=512, unique=True)  # APNs / FCM token
     last_seen = models.DateTimeField(auto_now=True)
@@ -58,23 +64,33 @@ class Notification(models.Model):
         ("normal", "Normal"),
     )
 
-    title = models.CharField(max_length=255, blank=True, default='')
-    body = models.TextField(blank=True, default='')
+    title = models.CharField(max_length=255, blank=True, default="")
+    body = models.TextField(blank=True, default="")
     data_payload = models.JSONField(blank=True, null=True)  # Extra metadata
-    image_url = models.URLField(blank=True, default='')
+    image_url = models.URLField(blank=True, default="")
     created_at = models.DateTimeField(auto_now_add=True)
     scheduled_at = models.DateTimeField(blank=True, null=True)
     sent_at = models.DateTimeField(blank=True, null=True)
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="pending")
     priority = models.CharField(max_length=10, choices=PRIORITY_CHOICES, default="high")
-    is_silent = models.BooleanField(default=False)  # Data-only push, no visible notification
-    collapse_key = models.CharField(max_length=100, blank=True, default='')  # Group similar notifications
+    is_silent = models.BooleanField(
+        default=False
+    )  # Data-only push, no visible notification
+    collapse_key = models.CharField(
+        max_length=100, blank=True, default=""
+    )  # Group similar notifications
     # Rich notification fields
-    click_action = models.URLField(blank=True, default='')  # Deep link URL
-    actions = models.JSONField(blank=True, null=True)  # Action buttons: [{"action": "open", "title": "View"}]
+    click_action = models.URLField(blank=True, default="")  # Deep link URL
+    actions = models.JSONField(
+        blank=True, null=True
+    )  # Action buttons: [{"action": "open", "title": "View"}]
     # Template reference
-    template = models.ForeignKey('NotificationTemplate', on_delete=models.SET_NULL, null=True, blank=True)
-    template_variables = models.JSONField(blank=True, null=True)  # Variables for template rendering
+    template = models.ForeignKey(
+        "NotificationTemplate", on_delete=models.SET_NULL, null=True, blank=True
+    )
+    template_variables = models.JSONField(
+        blank=True, null=True
+    )  # Variables for template rendering
     # Retry tracking
     retry_count = models.IntegerField(default=0)
     max_retries = models.IntegerField(default=3)
@@ -88,48 +104,58 @@ class Notification(models.Model):
 # ------------------------------
 class ScheduledNotification(models.Model):
     REPEAT_CHOICES = (
-        ('none', 'No Repeat'),
-        ('daily', 'Daily'),
-        ('weekly', 'Weekly'),
-        ('monthly', 'Monthly'),
+        ("none", "No Repeat"),
+        ("daily", "Daily"),
+        ("weekly", "Weekly"),
+        ("monthly", "Monthly"),
     )
     STATUS_CHOICES = (
-        ('pending', 'Pending'),
-        ('active', 'Active'),
-        ('paused', 'Paused'),
-        ('completed', 'Completed'),
-        ('cancelled', 'Cancelled'),
+        ("pending", "Pending"),
+        ("active", "Active"),
+        ("paused", "Paused"),
+        ("completed", "Completed"),
+        ("cancelled", "Cancelled"),
     )
 
     # What to send
     title = models.CharField(max_length=255)
     body = models.TextField()
     data_payload = models.JSONField(blank=True, null=True)
-    image_url = models.URLField(blank=True, default='')
-    priority = models.CharField(max_length=10, choices=Notification.PRIORITY_CHOICES, default='high')
+    image_url = models.URLField(blank=True, default="")
+    priority = models.CharField(
+        max_length=10, choices=Notification.PRIORITY_CHOICES, default="high"
+    )
     is_silent = models.BooleanField(default=False)
-    click_action = models.URLField(blank=True, default='')
+    click_action = models.URLField(blank=True, default="")
 
     # Template support
-    template = models.ForeignKey('NotificationTemplate', on_delete=models.SET_NULL, null=True, blank=True)
+    template = models.ForeignKey(
+        "NotificationTemplate", on_delete=models.SET_NULL, null=True, blank=True
+    )
     template_variables = models.JSONField(blank=True, null=True)
 
     # Who to send to
     phone_numbers = models.JSONField(default=list)  # List of phone numbers
-    topic = models.CharField(max_length=100, blank=True, default='')  # Or send to a topic
+    topic = models.CharField(
+        max_length=100, blank=True, default=""
+    )  # Or send to a topic
 
     # When to send
     scheduled_at = models.DateTimeField()
-    repeat_interval = models.CharField(max_length=10, choices=REPEAT_CHOICES, default='none')
+    repeat_interval = models.CharField(
+        max_length=10, choices=REPEAT_CHOICES, default="none"
+    )
     next_run_at = models.DateTimeField(null=True, blank=True)
     last_sent_at = models.DateTimeField(null=True, blank=True)
     max_occurrences = models.IntegerField(null=True, blank=True)
     occurrence_count = models.IntegerField(default=0)
 
     # State
-    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')
-    firebase_project = models.ForeignKey('FirebaseProject', on_delete=models.SET_NULL, null=True, blank=True)
-    created_by = models.ForeignKey('ApiClient', on_delete=models.SET_NULL, null=True)
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="pending")
+    firebase_project = models.ForeignKey(
+        "FirebaseProject", on_delete=models.SET_NULL, null=True, blank=True
+    )
+    created_by = models.ForeignKey("ApiClient", on_delete=models.SET_NULL, null=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):
@@ -147,8 +173,12 @@ class NotificationDeliveryLog(models.Model):
         ("read", "Read"),
     )
 
-    notification = models.ForeignKey(Notification, on_delete=models.CASCADE, related_name="deliveries")
-    device = models.ForeignKey(Device, on_delete=models.CASCADE, related_name="deliveries")
+    notification = models.ForeignKey(
+        Notification, on_delete=models.CASCADE, related_name="deliveries"
+    )
+    device = models.ForeignKey(
+        Device, on_delete=models.CASCADE, related_name="deliveries"
+    )
     delivered_at = models.DateTimeField(blank=True, null=True)
     read_at = models.DateTimeField(blank=True, null=True)
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="pending")
@@ -172,7 +202,9 @@ class Topic(models.Model):
 
 class UserTopic(models.Model):
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="topics")
-    topic = models.ForeignKey(Topic, on_delete=models.CASCADE, related_name="subscribers")
+    topic = models.ForeignKey(
+        Topic, on_delete=models.CASCADE, related_name="subscribers"
+    )
 
     class Meta:
         unique_together = ("user", "topic")
@@ -181,16 +213,17 @@ class UserTopic(models.Model):
         return f"{self.user.username} → {self.topic.name}"
 
 
-
 class ApiClient(models.Model):
     SCOPE_CHOICES = [
-        ('send', 'Send Notifications'),
-        ('read', 'Read Data'),
-        ('manage', 'Manage Devices & Profiles'),
-        ('admin', 'Full Admin Access'),
+        ("send", "Send Notifications"),
+        ("read", "Read Data"),
+        ("manage", "Manage Devices & Profiles"),
+        ("admin", "Full Admin Access"),
     ]
 
-    name = models.CharField(max_length=100, unique=True)   # e.g. "Mobile App", "Web Dashboard"
+    name = models.CharField(
+        max_length=100, unique=True
+    )  # e.g. "Mobile App", "Web Dashboard"
     client_id = models.UUIDField(default=uuid.uuid4, editable=False, unique=True)
     auth_token = models.CharField(max_length=255, unique=True)  # pre-generated token
     description = models.TextField(blank=True, null=True)
@@ -205,8 +238,9 @@ class ApiClient(models.Model):
 
     # IP whitelisting -- empty list means all IPs are allowed
     allowed_ips = models.JSONField(
-        default=list, blank=True,
-        help_text="List of allowed IP addresses. Empty = all IPs allowed."
+        default=list,
+        blank=True,
+        help_text="List of allowed IP addresses. Empty = all IPs allowed.",
     )
 
     def __str__(self):
@@ -222,13 +256,14 @@ class ApiClient(models.Model):
         if self.expires_at is None:
             return True
         from django.utils import timezone
+
         return timezone.now() < self.expires_at
 
     def has_scope(self, scope):
         """Check if the client has a specific permission scope."""
         if not self.scopes:
             return True  # No scopes set = unrestricted (backward compatible)
-        return scope in self.scopes or 'admin' in self.scopes
+        return scope in self.scopes or "admin" in self.scopes
 
     def is_ip_allowed(self, ip_address):
         """Check if the requesting IP is whitelisted."""
@@ -237,13 +272,13 @@ class ApiClient(models.Model):
         return ip_address in self.allowed_ips
 
 
-
-
 # ------------------------------
 # Firebase Projects (multi-tenant)
 # ------------------------------
 class FirebaseProject(models.Model):
-    api_client = models.ForeignKey(ApiClient, on_delete=models.CASCADE, related_name="firebase_projects")
+    api_client = models.ForeignKey(
+        ApiClient, on_delete=models.CASCADE, related_name="firebase_projects"
+    )
     project_name = models.CharField(max_length=100)
     credentials_json = models.JSONField()  # Store the full service account JSON
     is_default = models.BooleanField(default=False)
@@ -254,7 +289,7 @@ class FirebaseProject(models.Model):
         return f"{self.project_name} ({self.api_client.name})"
 
     class Meta:
-        unique_together = ('api_client', 'project_name')
+        unique_together = ("api_client", "project_name")
 
 
 # ------------------------------
@@ -290,7 +325,7 @@ class NotificationAnalytics(models.Model):
     avg_delivery_time_ms = models.IntegerField(null=True)
 
     class Meta:
-        unique_together = ('date', 'api_client', 'topic', 'platform')
+        unique_together = ("date", "api_client", "topic", "platform")
 
     def __str__(self):
         return f"Analytics {self.date} - {self.platform or 'all'}"
@@ -301,12 +336,12 @@ class NotificationAnalytics(models.Model):
 # ------------------------------
 class WebhookEndpoint(models.Model):
     EVENT_CHOICES = [
-        ('notification.sent', 'Notification Sent'),
-        ('notification.delivered', 'Notification Delivered'),
-        ('notification.read', 'Notification Read'),
-        ('notification.failed', 'Notification Failed'),
-        ('device.registered', 'Device Registered'),
-        ('device.deactivated', 'Device Deactivated'),
+        ("notification.sent", "Notification Sent"),
+        ("notification.delivered", "Notification Delivered"),
+        ("notification.read", "Notification Read"),
+        ("notification.failed", "Notification Failed"),
+        ("device.registered", "Device Registered"),
+        ("device.deactivated", "Device Deactivated"),
     ]
 
     api_client = models.ForeignKey(ApiClient, on_delete=models.CASCADE)

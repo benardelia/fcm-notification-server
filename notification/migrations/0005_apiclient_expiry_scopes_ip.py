@@ -6,23 +6,30 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('notification', '0004_notification_actions_notification_click_action_and_more'),
+        (
+            "notification",
+            "0004_notification_actions_notification_click_action_and_more",
+        ),
     ]
 
     operations = [
         migrations.AddField(
-            model_name='apiclient',
-            name='allowed_ips',
-            field=models.JSONField(blank=True, default=list, help_text='List of allowed IP addresses. Empty = all IPs allowed.'),
+            model_name="apiclient",
+            name="allowed_ips",
+            field=models.JSONField(
+                blank=True,
+                default=list,
+                help_text="List of allowed IP addresses. Empty = all IPs allowed.",
+            ),
         ),
         migrations.AddField(
-            model_name='apiclient',
-            name='expires_at',
+            model_name="apiclient",
+            name="expires_at",
             field=models.DateTimeField(blank=True, null=True),
         ),
         migrations.AddField(
-            model_name='apiclient',
-            name='scopes',
+            model_name="apiclient",
+            name="scopes",
             field=models.JSONField(blank=True, default=list),
         ),
     ]
