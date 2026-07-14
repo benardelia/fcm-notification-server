@@ -21,8 +21,8 @@ class TestCleanupStaleTokensTask:
 
         # Active device last seen 100 days ago → should be deactivated
         old_device = DeviceFactory(is_active=True)
-        old_device.last_seen = timezone.now() - timedelta(days=100)
-        old_device.save(update_fields=["last_seen"])
+        from notification.models import Device
+        Device.objects.filter(pk=old_device.pk).update(last_seen=timezone.now() - timedelta(days=100))
 
         # Recent device → should remain active
         recent_device = DeviceFactory(is_active=True)
@@ -87,7 +87,7 @@ class TestAggregateDailyAnalyticsTask:
 @pytest.mark.django_db
 class TestSendNotificationAsyncTask:
 
-    @patch("notification.tasks.FCMService")
+    @patch("notification.services.FCMService")
     def test_sends_and_updates_delivery_log(self, MockFCM):
         from notification.models import NotificationDeliveryLog
         from notification.tasks import send_notification_async
@@ -111,7 +111,7 @@ class TestSendNotificationAsyncTask:
         notif.refresh_from_db()
         assert notif.status == "sent"
 
-    @patch("notification.tasks.FCMService")
+    @patch("notification.services.FCMService")
     def test_marks_failed_on_firebase_error(self, MockFCM):
         from celery.exceptions import Retry
 

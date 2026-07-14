@@ -22,6 +22,7 @@ drf-spectacular>=0.28
 
 # CORS
 django-cors-headers>=4.4
+whitenoise>=6.0
 
 # Structured logging
 django-structlog>=8.0
