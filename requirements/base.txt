@@ -28,3 +28,6 @@ django-structlog>=8.0
 
 # HTTP client (webhook dispatcher)
 requests>=2.32
+
+# Metrics
+django-prometheus>=2.3
