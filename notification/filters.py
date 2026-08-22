@@ -33,6 +33,12 @@ class NotificationFilter(django_filters.FilterSet):
         field_name="created_at", lookup_expr="lte"
     )
     title = django_filters.CharFilter(lookup_expr="icontains")
+    phone_number = django_filters.CharFilter(
+        field_name="deliveries__device__profile__phone_number", lookup_expr="icontains"
+    )
+    email = django_filters.CharFilter(
+        field_name="deliveries__device__profile__email", lookup_expr="icontains"
+    )
 
     class Meta:
         model = Notification
@@ -43,6 +49,12 @@ class DeliveryLogFilter(django_filters.FilterSet):
     notification = django_filters.NumberFilter()
     device = django_filters.NumberFilter()
     status = django_filters.ChoiceFilter(choices=NotificationDeliveryLog.STATUS_CHOICES)
+    phone_number = django_filters.CharFilter(
+        field_name="device__profile__phone_number", lookup_expr="icontains"
+    )
+    email = django_filters.CharFilter(
+        field_name="device__profile__email", lookup_expr="icontains"
+    )
 
     class Meta:
         model = NotificationDeliveryLog
