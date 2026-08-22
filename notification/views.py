@@ -768,7 +768,7 @@ class DeviceRetrieveUpdateDestroyView(generics.RetrieveUpdateDestroyAPIView):
     ),
 )
 class NotificationListCreateView(generics.ListCreateAPIView):
-    queryset = Notification.objects.all()
+    queryset = Notification.objects.all().distinct()
     serializer_class = NotificationSerializer
     filterset_class = NotificationFilter
     search_fields = ["title", "body"]
