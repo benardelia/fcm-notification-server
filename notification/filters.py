@@ -1,4 +1,5 @@
 import django_filters
+from django.db.models import Q
 
 from .models import (Device, Notification, NotificationAnalytics,
                      NotificationDeliveryLog, NotificationTemplate, Profile,
@@ -33,32 +34,54 @@ class NotificationFilter(django_filters.FilterSet):
         field_name="created_at", lookup_expr="lte"
     )
     title = django_filters.CharFilter(lookup_expr="icontains")
-    phone_number = django_filters.CharFilter(
-        field_name="deliveries__device__profile__phone_number", lookup_expr="icontains"
-    )
-    email = django_filters.CharFilter(
-        field_name="deliveries__device__profile__email", lookup_expr="icontains"
-    )
+    phone_number = django_filters.CharFilter(method="filter_contact")
+    email = django_filters.CharFilter(method="filter_contact")
 
     class Meta:
         model = Notification
         fields = ["status", "title"]
+
+    def filter_contact(self, queryset, name, value):
+        if getattr(self, "_contact_filter_applied", False):
+            return queryset
+        self._contact_filter_applied = True
+
+        query = Q()
+        phone_number = self.data.get("phone_number")
+        email = self.data.get("email")
+        if phone_number:
+            query |= Q(deliveries__device__profile__phone_number__icontains=phone_number)
+        if email:
+            query |= Q(deliveries__device__profile__email__icontains=email)
+
+        return queryset.filter(query).distinct() if query else queryset
 
 
 class DeliveryLogFilter(django_filters.FilterSet):
     notification = django_filters.NumberFilter()
     device = django_filters.NumberFilter()
     status = django_filters.ChoiceFilter(choices=NotificationDeliveryLog.STATUS_CHOICES)
-    phone_number = django_filters.CharFilter(
-        field_name="device__profile__phone_number", lookup_expr="icontains"
-    )
-    email = django_filters.CharFilter(
-        field_name="device__profile__email", lookup_expr="icontains"
-    )
+    phone_number = django_filters.CharFilter(method="filter_contact")
+    email = django_filters.CharFilter(method="filter_contact")
 
     class Meta:
         model = NotificationDeliveryLog
         fields = ["notification", "device", "status"]
+
+    def filter_contact(self, queryset, name, value):
+        if getattr(self, "_contact_filter_applied", False):
+            return queryset
+        self._contact_filter_applied = True
+
+        query = Q()
+        phone_number = self.data.get("phone_number")
+        email = self.data.get("email")
+        if phone_number:
+            query |= Q(device__profile__phone_number__icontains=phone_number)
+        if email:
+            query |= Q(device__profile__email__icontains=email)
+
+        return queryset.filter(query).distinct() if query else queryset
 
 
 class TopicFilter(django_filters.FilterSet):
