@@ -17,6 +17,14 @@ services:
              python manage.py createsuperuser --noinput || true &&
              gunicorn fcm_server.wsgi:application --bind 0.0.0.0:8000 --workers 3"
 
+  # Never publish Redis/Postgres on the host in production: Docker's port
+  # publishing bypasses ufw. Services reach them over the internal network.
+  redis:
+    ports: !reset []
+
+  db:
+    ports: !reset []
+
 networks:
   proxy-network:
     external: true
