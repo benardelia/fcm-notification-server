@@ -17,13 +17,30 @@ services:
              python manage.py createsuperuser --noinput || true &&
              gunicorn fcm_server.wsgi:application --bind 0.0.0.0:8000 --workers 3"
 
-  # Never publish Redis/Postgres on the host in production: Docker's port
-  # publishing bypasses ufw. Services reach them over the internal network.
   redis:
-    ports: !reset []
+    # Overrides for production: bind to localhost only, not the public
+    # interface. The base docker-compose.yml's "6379:6379" binds to
+    # 0.0.0.0 by default, and Docker's port publishing bypasses ufw, so
+    # this unauthenticated Redis was directly reachable from the internet
+    # in production. In Oct 2026 something wrote hundreds of junk keys
+    # (k001.., d000..7001xx filled with "vvvv...") into it, and the
+    # resulting dump.rdb crashed Redis on every restart ("Duplicated key
+    # found in RDB file"). web/celery don't need this mapping at all --
+    # they reach `redis` over the internal Docker network by service name
+    # regardless. Kept loopback-only, rather than removed outright, so
+    # `redis-cli` still works from the host itself or over an SSH tunnel
+    # (`ssh -L 6379:localhost:6379 user@server`).
+    ports: !override
+      - "127.0.0.1:6379:6379"
 
   db:
-    ports: !reset []
+    # Same as redis above: the base "5432:5432" binds to 0.0.0.0, which
+    # exposed Postgres (with a superuser login) to the internet. `web`
+    # reaches `db` over the internal Docker network (DB_HOST=db), so the
+    # host mapping is only kept, loopback-only, for `psql` from the host
+    # or over an SSH tunnel (`ssh -L 5432:localhost:5432 user@server`).
+    ports: !override
+      - "127.0.0.1:5432:5432"
 
 networks:
   proxy-network:
